@@ -87,22 +87,25 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
   const brokerPath = `${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start`;
   const brokerUrl = buildBrokerUrl(env, brokerPath, brokerParams);
 
-  const response = await fetch(brokerUrl.toString(), {
+  const brokerRequest = new Request(brokerUrl.toString(), {
     method: "GET",
     headers: request.headers,
-    redirect: "manual",
+    redirect: "manual" as RequestRedirect,
   });
 
+  const response = await fetch(brokerRequest);
   const headers = new Headers(response.headers);
-  return new Response(response.body, { status: response.status, headers });
+  return new Response(null, { status: response.status, headers });
 }
 
 async function handleCallback(url: URL, env: Env): Promise<Response> {
   const brokerUrl = buildBrokerUrl(env, "/callback", url.searchParams);
-  const response = await fetch(brokerUrl.toString(), {
+  const brokerRequest = new Request(brokerUrl.toString(), {
     method: "GET",
-    redirect: "manual",
+    redirect: "manual" as RequestRedirect,
   });
+
+  const response = await fetch(brokerRequest);
 
   if (response.status >= 200 && response.status < 300) {
     return new Response(SUCCESS_HTML, {
