@@ -1,0 +1,28 @@
+[package]
+name = "oauth-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+wasm-host = ["dep:wasmtime", "dep:anyhow", "dep:async-trait"]
+
+[dependencies]
+oauth-core = { path = "../oauth-core" }
+async-nats = "0.34"
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+url = "2"
+futures-util = "0.3"
+base64 = "0.21"
+
+[target.'cfg(feature = "wasm-host")'.dependencies]
+wasmtime = { version = "16", features = ["component-model"] }
+anyhow = "1"
+async-trait = "0.1"
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }

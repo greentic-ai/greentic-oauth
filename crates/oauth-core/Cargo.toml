@@ -1,0 +1,15 @@
+[package]
+name = "oauth-core"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+schemas = ["schemars"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+schemars = { version = "0.8", optional = true }
+
+[dev-dependencies]
+serde_json = "1"

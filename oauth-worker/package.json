@@ -1,0 +1,16 @@
+{
+  "name": "oauth-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "wrangler": "^3.0.0",
+    "@cloudflare/workers-types": "^4.20240405.0"
+  }
+}
