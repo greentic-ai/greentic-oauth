@@ -1,13 +1,13 @@
-use std::{fmt, time::Duration};
+use std::{fmt, str::FromStr, time::Duration};
 
 use async_nats::Client as NatsClient;
+use base64::Engine;
 use futures_util::StreamExt;
 use oauth_core::TokenHandleClaims;
 use reqwest::{Client as HttpClient, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::time;
 use url::Url;
-use base64::Engine;
 
 use crate::error::SdkError;
 
@@ -22,12 +22,7 @@ pub struct ClientConfig {
     pub team: Option<String>,
 }
 
-impl ClientConfig {
-    pub fn http_base_url(mut self, url: impl Into<String>) -> Self {
-        self.http_base_url = url.into();
-        self
-    }
-}
+impl ClientConfig {}
 
 /// High-level client for interacting with the OAuth broker.
 #[derive(Clone)]
@@ -95,11 +90,15 @@ impl Client {
         let mut subscription = self.nats.subscribe(subject.clone()).await?;
 
         let message = if let Some(duration) = timeout {
-            time::timeout(duration, subscription.next()).await??
+            time::timeout(duration, subscription.next())
+                .await?
+                .ok_or_else(|| SdkError::InvalidResponse("subscription closed".into()))?
         } else {
-            subscription.next().await
-        }
-        .ok_or_else(|| SdkError::InvalidResponse("subscription closed".into()))?;
+            subscription
+                .next()
+                .await
+                .ok_or_else(|| SdkError::InvalidResponse("subscription closed".into()))?
+        };
 
         let event: BrokerEvent = serde_json::from_slice(&message.payload)?;
         Ok(FlowResult {
@@ -130,7 +129,7 @@ impl Client {
             .send()
             .await?;
 
-        Self::ensure_success(response.status()).await?;
+        Self::ensure_success(response.status())?;
         let body: HttpAccessTokenResponse = response.json().await?;
         Ok(AccessToken {
             access_token: body.access_token,
@@ -166,7 +165,7 @@ impl Client {
         };
 
         let response = self.http.post(url).json(&payload).send().await?;
-        Self::ensure_success(response.status()).await?;
+        Self::ensure_success(response.status())?;
         let body: HttpSignedFetchResponse = response.json().await?;
 
         if body.body_encoding != "base64" {
@@ -207,13 +206,11 @@ impl Client {
         )
     }
 
-    async fn ensure_success(status: StatusCode) -> Result<(), SdkError> {
+    fn ensure_success(status: StatusCode) -> Result<(), SdkError> {
         if status.is_success() {
             Ok(())
         } else {
-            Err(SdkError::InvalidResponse(format!(
-                "http status {status}"
-            )))
+            Err(SdkError::InvalidResponse(format!("http status {status}")))
         }
     }
 }
@@ -230,7 +227,11 @@ pub struct InitiateAuthRequest {
 }
 
 impl InitiateAuthRequest {
-    pub fn new(owner_kind: OwnerKind, owner_id: impl Into<String>, flow_id: impl Into<String>) -> Self {
+    pub fn new(
+        owner_kind: OwnerKind,
+        owner_id: impl Into<String>,
+        flow_id: impl Into<String>,
+    ) -> Self {
         Self {
             owner_kind,
             owner_id: owner_id.into(),
@@ -346,6 +347,18 @@ impl fmt::Display for OwnerKind {
     }
 }
 
+impl FromStr for OwnerKind {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "user" => Ok(OwnerKind::User),
+            "service" => Ok(OwnerKind::Service),
+            _ => Err("unknown owner kind"),
+        }
+    }
+}
+
 /// Visibility scope for stored connections.
 #[derive(Clone, Copy, Debug)]
 pub enum Visibility {
@@ -360,6 +373,19 @@ impl Visibility {
             Visibility::Private => "private",
             Visibility::Team => "team",
             Visibility::Tenant => "tenant",
+        }
+    }
+}
+
+impl FromStr for Visibility {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "private" => Ok(Visibility::Private),
+            "team" => Ok(Visibility::Team),
+            "tenant" => Ok(Visibility::Tenant),
+            _ => Err("unknown visibility"),
         }
     }
 }

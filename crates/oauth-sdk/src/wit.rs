@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result as AnyhowResult};
 use async_trait::async_trait;
+use base64::Engine;
 use reqwest::Method;
 use std::time::Duration;
 

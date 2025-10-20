@@ -1,3 +1,5 @@
+use std::fmt;
+
 use thiserror::Error;
 
 /// Errors emitted by the OAuth SDK client.
@@ -6,7 +8,7 @@ pub enum SdkError {
     #[error("http error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("nats error: {0}")]
-    Nats(#[from] async_nats::Error),
+    Nats(String),
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     #[error("url error: {0}")]
@@ -20,5 +22,20 @@ pub enum SdkError {
 impl From<tokio::time::error::Elapsed> for SdkError {
     fn from(_: tokio::time::error::Elapsed) -> Self {
         SdkError::Timeout
+    }
+}
+
+impl<E> From<async_nats::error::Error<E>> for SdkError
+where
+    E: Clone + fmt::Debug + fmt::Display + PartialEq,
+{
+    fn from(err: async_nats::error::Error<E>) -> Self {
+        SdkError::Nats(format!("{err:?}"))
+    }
+}
+
+impl From<async_nats::SubscribeError> for SdkError {
+    fn from(err: async_nats::SubscribeError) -> Self {
+        SdkError::Nats(err.to_string())
     }
 }

@@ -18,11 +18,9 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 url = "2"
 futures-util = "0.3"
 base64 = "0.21"
-
-[target.'cfg(feature = "wasm-host")'.dependencies]
-wasmtime = { version = "16", features = ["component-model"] }
-anyhow = "1"
-async-trait = "0.1"
+wasmtime = { version = "16", features = ["component-model"], optional = true }
+anyhow = { version = "1", optional = true }
+async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
