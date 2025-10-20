@@ -1,6 +1,10 @@
 name = "oauth-worker"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-10-01"
 
 [vars]
-BROKER_ENDPOINT = "http://127.0.0.1:8080"
+# Configure BROKER_URL via `wrangler secret put BROKER_URL` for production deployments.
+
+[dev]
+port = 8789
+vars = { BROKER_URL = "http://127.0.0.1:8080" }
