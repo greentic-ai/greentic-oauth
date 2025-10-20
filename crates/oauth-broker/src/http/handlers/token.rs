@@ -118,16 +118,11 @@ pub struct SignedFetchHeader {
     value: String,
 }
 
-#[derive(Copy, Clone, Deserialize)]
+#[derive(Copy, Clone, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyEncoding {
+    #[default]
     Base64,
-}
-
-impl Default for BodyEncoding {
-    fn default() -> Self {
-        BodyEncoding::Base64
-    }
 }
 
 #[derive(Serialize)]

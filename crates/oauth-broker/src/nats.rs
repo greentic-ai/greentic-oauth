@@ -112,7 +112,7 @@ where
             .filter_map(|entry| entry.as_str().map(|s| s.to_string()))
             .collect(),
         Some(Value::String(s)) => s
-            .split(|c| c == ',' || c == ' ')
+            .split([',', ' '])
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect(),
@@ -122,7 +122,7 @@ where
     let visibility = value
         .get("visibility")
         .and_then(Value::as_str)
-        .map(|v| Visibility::from_str(v))
+        .map(Visibility::from_str)
         .transpose()
         .map_err(|_| NatsError::InvalidRequest("invalid visibility".into()))?
         .unwrap_or(Visibility::Private);
@@ -239,16 +239,11 @@ struct SignedFetchHeader {
     value: String,
 }
 
-#[derive(Copy, Clone, Deserialize)]
+#[derive(Copy, Clone, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 enum BodyEncoding {
+    #[default]
     Base64,
-}
-
-impl Default for BodyEncoding {
-    fn default() -> Self {
-        BodyEncoding::Base64
-    }
 }
 
 #[derive(Serialize)]
@@ -342,7 +337,7 @@ pub async fn connect(
     let port = url
         .port_or_known_default()
         .ok_or_else(|| NatsError::Protocol("missing port".into()))?;
-    let addr = format!("{}:{}", host, port);
+    let addr = format!("{host}:{port}");
 
     let stream = TcpStream::connect(addr).await?;
 
@@ -392,7 +387,7 @@ pub async fn connect(
         "version": "0.1"
     });
     writer
-        .write_command(&format!("CONNECT {}\r\n", connect_payload))
+        .write_command(&format!("CONNECT {connect_payload}\r\n"))
         .await?;
     writer.write_command("PING\r\n").await?;
 

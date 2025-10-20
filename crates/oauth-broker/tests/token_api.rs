@@ -414,7 +414,7 @@ fn security_config() -> SecurityConfig {
     let jws = JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
         .expect("jws");
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).expect("jwe");
-    let csrf = CsrfKey::new(&vec![3u8; 32]).expect("csrf");
+    let csrf = CsrfKey::new(&[3u8; 32]).expect("csrf");
     SecurityConfig { jws, jwe, csrf }
 }
 
@@ -466,9 +466,9 @@ impl Provider for TestProvider {
         let mut counter = self.refresh_counter.lock().expect("counter lock");
         *counter += 1;
         Ok(TokenSet {
-            access_token: format!("refreshed-token-{}", counter),
+            access_token: format!("refreshed-token-{counter}"),
             expires_in: Some(600),
-            refresh_token: Some(format!("refresh-token-{}", counter)),
+            refresh_token: Some(format!("refresh-token-{counter}")),
             token_type: Some("Bearer".into()),
             scopes: vec!["read".into()],
         })

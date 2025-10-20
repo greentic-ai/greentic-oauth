@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{env, sync::Arc};
 
 use url::Url;
 
@@ -20,15 +20,14 @@ pub enum ConfigError {
     Provider(#[from] ProviderError),
 }
 
+#[derive(Default)]
 pub struct ProviderRegistry {
     providers: ProviderMap,
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
-        Self {
-            providers: HashMap::new(),
-        }
+        Self::default()
     }
 
     pub fn from_env() -> Result<Self, ConfigError> {

@@ -55,7 +55,7 @@ fn parse_scopes(input: Option<String>) -> Vec<String> {
     input
         .map(|value| {
             value
-                .split(|c| c == ',' || c == ' ')
+                .split([',', ' '])
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string())
                 .collect()

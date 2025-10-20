@@ -151,7 +151,7 @@ fn security_config() -> SecurityConfig {
     let jws = JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
         .expect("jws");
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).expect("jwe");
-    let csrf = CsrfKey::new(&vec![3u8; 32]).expect("csrf");
+    let csrf = CsrfKey::new(&[3u8; 32]).expect("csrf");
 
     SecurityConfig { jws, jwe, csrf }
 }
@@ -287,42 +287,44 @@ async fn start_to_callback_happy_path() {
     let connection = index.get(&flow_state.provider, &key).expect("connection");
     assert_eq!(connection.path, secret_path.as_str());
 
-    let events = publisher_impl.events.lock().unwrap();
-    assert_eq!(events.len(), 3);
-    let mut events_map: HashMap<&str, &[u8]> = HashMap::new();
-    for (subject, payload) in events.iter() {
-        events_map.insert(subject.as_str(), payload.as_slice());
+    {
+        let events = publisher_impl.events.lock().unwrap();
+        assert_eq!(events.len(), 3);
+        let mut events_map: HashMap<&str, &[u8]> = HashMap::new();
+        for (subject, payload) in events.iter() {
+            events_map.insert(subject.as_str(), payload.as_slice());
+        }
+
+        let started_subject = "oauth.audit.prod.acme.platform.fake.started";
+        let started_payload = events_map
+            .get(started_subject)
+            .expect("started audit event present");
+        let started_json: serde_json::Value =
+            serde_json::from_slice(started_payload).expect("started payload");
+        assert_eq!(started_json["action"], "started");
+        assert_eq!(started_json["data"]["flow_id"], "flow-123");
+        assert_eq!(started_json["data"]["owner_kind"], "user");
+
+        let res_subject = "oauth.res.acme.prod.platform.fake.flow-123";
+        let res_payload = events_map
+            .get(res_subject)
+            .expect("callback result event present");
+        let event: CallbackEventPayload = serde_json::from_slice(res_payload).unwrap();
+        assert_eq!(event.flow_id, "flow-123");
+        assert_eq!(event.token_handle.provider, "fake");
+        assert_eq!(event.token_handle.subject, flow_state.owner_id);
+        assert_eq!(event.storage_path, secret_path.as_str());
+
+        let success_subject = "oauth.audit.prod.acme.platform.fake.callback_success";
+        let success_payload = events_map
+            .get(success_subject)
+            .expect("callback success audit event present");
+        let success_json: serde_json::Value =
+            serde_json::from_slice(success_payload).expect("success payload");
+        assert_eq!(success_json["action"], "callback_success");
+        assert_eq!(success_json["data"]["flow_id"], "flow-123");
+        assert_eq!(success_json["data"]["storage_path"], secret_path.as_str());
     }
-
-    let started_subject = "oauth.audit.prod.acme.platform.fake.started";
-    let started_payload = events_map
-        .get(started_subject)
-        .expect("started audit event present");
-    let started_json: serde_json::Value =
-        serde_json::from_slice(started_payload).expect("started payload");
-    assert_eq!(started_json["action"], "started");
-    assert_eq!(started_json["data"]["flow_id"], "flow-123");
-    assert_eq!(started_json["data"]["owner_kind"], "user");
-
-    let res_subject = "oauth.res.acme.prod.platform.fake.flow-123";
-    let res_payload = events_map
-        .get(res_subject)
-        .expect("callback result event present");
-    let event: CallbackEventPayload = serde_json::from_slice(res_payload).unwrap();
-    assert_eq!(event.flow_id, "flow-123");
-    assert_eq!(event.token_handle.provider, "fake");
-    assert_eq!(event.token_handle.subject, flow_state.owner_id);
-    assert_eq!(event.storage_path, secret_path.as_str());
-
-    let success_subject = "oauth.audit.prod.acme.platform.fake.callback_success";
-    let success_payload = events_map
-        .get(success_subject)
-        .expect("callback success audit event present");
-    let success_json: serde_json::Value =
-        serde_json::from_slice(success_payload).expect("success payload");
-    assert_eq!(success_json["action"], "callback_success");
-    assert_eq!(success_json["data"]["flow_id"], "flow-123");
-    assert_eq!(success_json["data"]["storage_path"], secret_path.as_str());
 
     let status = status::get_status::<EnvSecretsManager>(
         Path(StatusPath {

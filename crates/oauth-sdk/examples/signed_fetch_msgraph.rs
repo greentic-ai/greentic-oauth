@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let response = client.signed_fetch(request).await?;
     println!("status: {}", response.status);
     for (name, value) in &response.headers {
-        println!("header: {}: {}", name, value);
+        println!("header: {name}: {value}");
     }
     println!("body:\n{}", String::from_utf8_lossy(&response.body));
 

@@ -60,7 +60,7 @@ fn load_config() -> Result<ClientConfig, Box<dyn Error>> {
 
 fn parse_scopes(value: &str) -> Vec<String> {
     value
-        .split(|c| c == ',' || c == ' ')
+        .split([',', ' '])
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect()

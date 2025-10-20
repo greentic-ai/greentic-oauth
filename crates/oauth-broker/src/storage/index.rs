@@ -95,9 +95,7 @@ impl StorageIndex {
     /// Upsert a provider connection entry for the given key.
     pub fn upsert(&self, key: ConnectionKey, connection: Connection) {
         let mut map = self.inner.write().expect("index write lock poisoned");
-        let entries = map
-            .entry(connection.provider.clone())
-            .or_insert_with(Vec::new);
+        let entries = map.entry(connection.provider.clone()).or_default();
 
         if let Some(existing) = entries.iter_mut().find(|entry| entry.key == key) {
             existing.connection = connection;

@@ -113,7 +113,7 @@ fn security_config() -> SecurityConfig {
     let jws =
         JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=").unwrap();
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).unwrap();
-    let csrf = CsrfKey::new(&vec![3u8; 32]).unwrap();
+    let csrf = CsrfKey::new(&[3u8; 32]).unwrap();
     SecurityConfig { jws, jwe, csrf }
 }
 
@@ -173,7 +173,7 @@ async fn nats_request_and_publish_flow() {
         Err(err) => panic!("failed to bind mock NATS server: {err}"),
     };
     let addr = listener.local_addr().unwrap();
-    let url = format!("nats://{}", addr);
+    let url = format!("nats://{addr}");
 
     let options = NatsOptions {
         url: url.clone(),

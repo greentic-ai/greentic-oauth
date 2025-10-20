@@ -23,6 +23,7 @@ pub struct FlowState {
 }
 
 impl FlowState {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         env: impl Into<String>,
         tenant: impl Into<String>,
@@ -66,7 +67,7 @@ impl FlowState {
             format!("tenants/{}", self.tenant),
         ];
         if let Some(team) = &self.team {
-            segments.push(format!("teams/{}", team));
+            segments.push(format!("teams/{team}"));
         }
         segments.push(format!("providers/{}", self.provider));
         segments.push(format!("{}-{}", self.owner_kind.as_str(), self.owner_id));
