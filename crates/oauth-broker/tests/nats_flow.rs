@@ -14,6 +14,7 @@ use oauth_broker::{
         AppContext, SharedContext,
     },
     nats::{self, NatsEventPublisher, NatsOptions},
+    rate_limit::RateLimiter,
     security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService, SecurityConfig},
     storage::{
         env::EnvSecretsManager, index::ConnectionKey, secrets_manager::SecretsManager, StorageIndex,
@@ -123,6 +124,7 @@ fn build_context(
     index: Arc<StorageIndex>,
     redirect_guard: Arc<RedirectGuard>,
     publisher: SharedPublisher,
+    rate_limiter: Arc<RateLimiter>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: registry,
@@ -131,6 +133,7 @@ fn build_context(
         index,
         redirect_guard,
         publisher,
+        rate_limiter,
     })
 }
 
@@ -161,7 +164,14 @@ async fn nats_request_and_publish_flow() {
         RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
     );
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipping nats flow test: {err}");
+            return;
+        }
+        Err(err) => panic!("failed to bind mock NATS server: {err}"),
+    };
     let addr = listener.local_addr().unwrap();
     let url = format!("nats://{}", addr);
 
@@ -189,6 +199,7 @@ async fn nats_request_and_publish_flow() {
 
     let (writer, reader) = nats::connect(&options).await.unwrap();
     let publisher: SharedPublisher = Arc::new(NatsEventPublisher::new(writer.clone()));
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
 
     let context = build_context(
         providers,
@@ -197,6 +208,7 @@ async fn nats_request_and_publish_flow() {
         index.clone(),
         redirect_guard,
         publisher.clone(),
+        rate_limiter,
     );
 
     let request_handle = nats::spawn_request_listener(writer.clone(), reader, context.clone())

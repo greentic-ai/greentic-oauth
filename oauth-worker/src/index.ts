@@ -1,42 +1,8 @@
-interface Env {
-  BROKER_URL: string;
-}
-
-const SUCCESS_HTML = `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Authentication Complete</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem; text-align: center; color: #0f172a; }
-      h1 { font-size: 1.5rem; margin-bottom: 1rem; }
-      button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; border: none; border-radius: 0.5rem; background: #0ea5e9; color: white; cursor: pointer; }
-      button:hover { background: #0284c7; }
-    </style>
-  </head>
-  <body>
-    <h1>Authentication Complete</h1>
-    <p>You can close this window and return to the application.</p>
-    <button onclick="window.close()">Close Window</button>
-    <script>
-      setTimeout(() => window.close(), 1500);
-    </script>
-  </body>
-</html>`;
+import { brokerFetch, type Env } from "./broker";
+import type { ExportedHandler } from "cloudflare:workers";
 
 function errorResponse(status: number, message: string): Response {
   return new Response(message, { status, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-}
-
-function buildBrokerUrl(env: Env, path: string, searchParams: URLSearchParams): URL {
-  const base = new URL(env.BROKER_URL);
-  let pathname = base.pathname || "/";
-  if (!pathname.endsWith("/")) {
-    pathname += "/";
-  }
-  base.pathname = pathname + path.replace(/^\/+/, "");
-  base.search = searchParams.toString();
-  return base;
 }
 
 function pickParam(params: URLSearchParams, name: string): string | null {
@@ -44,7 +10,7 @@ function pickParam(params: URLSearchParams, name: string): string | null {
   return value && value.trim().length > 0 ? value.trim() : null;
 }
 
-export default {
+const handler = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
@@ -57,7 +23,9 @@ export default {
         return errorResponse(404, "Not Found");
     }
   },
-};
+} satisfies ExportedHandler<Env>;
+
+export default handler;
 
 async function handleStart(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.method !== "GET") {
@@ -79,51 +47,76 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
     return errorResponse(400, `Missing required query parameters: ${missing.join(", ")}`);
   }
 
-  const brokerParams = new URLSearchParams(params);
-  brokerParams.delete("env");
-  brokerParams.delete("tenant");
-  brokerParams.delete("provider");
+  const forwardedParams = new URLSearchParams(url.searchParams);
+  forwardedParams.delete("env");
+  forwardedParams.delete("tenant");
+  forwardedParams.delete("provider");
+  const query = forwardedParams.toString();
+  const path = `/${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start${query ? `?${query}` : ""}`;
 
-  const brokerPath = `${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start`;
-  const brokerUrl = buildBrokerUrl(env, brokerPath, brokerParams);
-
-  const brokerRequest = new Request(brokerUrl.toString(), {
+  const response = await brokerFetch(env, path, {
     method: "GET",
     headers: request.headers,
-    redirect: "manual" as RequestRedirect,
+    redirect: "manual",
   });
 
-  const response = await fetch(brokerRequest);
-  const headers = new Headers(response.headers);
-  return new Response(null, { status: response.status, headers });
+  return redirectOrPassThrough(response);
 }
 
 async function handleCallback(url: URL, env: Env): Promise<Response> {
-  const brokerUrl = buildBrokerUrl(env, "/callback", url.searchParams);
-  const brokerRequest = new Request(brokerUrl.toString(), {
+  const path = `/oauth/callback${url.search}`;
+
+  const response = await brokerFetch(env, path, {
     method: "GET",
-    redirect: "manual" as RequestRedirect,
+    redirect: "manual",
   });
 
-  const response = await fetch(brokerRequest);
-
-  if (response.status >= 200 && response.status < 300) {
-    return new Response(SUCCESS_HTML, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
+  if (response.status === 200) {
+    const text = await response.text();
+    return new Response(
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Authentication complete</title>
+  </head>
+  <body>
+    <h1>Authentication complete</h1>
+    <pre>${escapeHtml(text)}</pre>
+    <script>setTimeout(() => window.close(), 1500);</script>
+  </body>
+</html>`,
+      {
+        status: 200,
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      }
+    );
   }
 
+  return redirectOrPassThrough(response);
+}
+
+function redirectOrPassThrough(response: Response): Response {
+  const headers = cloneHeaders(response.headers);
   if (response.status >= 300 && response.status < 400) {
-    return new Response(SUCCESS_HTML, {
-      status: 200,
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
+    return new Response(null, { status: response.status, headers });
   }
+  return new Response(response.body, { status: response.status, headers });
+}
 
-  const text = await response.text();
-  return new Response(text || "Broker callback failed", {
-    status: response.status,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+function cloneHeaders(source: Headers): Headers {
+  const headers = new Headers();
+  source.forEach((value, key) => {
+    headers.set(key, value);
   });
+  return headers;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }

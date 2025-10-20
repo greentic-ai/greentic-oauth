@@ -7,9 +7,12 @@ use axum::{
 };
 use oauth_core::types::{OwnerKind, TenantCtx, TokenHandleClaims};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::{
+    audit::{self, AuditAttributes},
     http::{error::AppError, state::FlowState},
+    rate_limit,
     storage::{index::ConnectionKey, models::Connection, secrets_manager::SecretsManager},
     tokens::StoredToken,
 };
@@ -30,22 +33,151 @@ pub async fn complete<S>(
 where
     S: SecretsManager + 'static,
 {
-    if let Some(err) = error {
+    let unknown_attrs = AuditAttributes {
+        env: "unknown",
+        tenant: "unknown",
+        team: None,
+        provider: "unknown",
+    };
+
+    let state_token = match state {
+        Some(token) => token,
+        None => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &unknown_attrs,
+                json!({
+                    "flow_id": serde_json::Value::Null,
+                    "reason": "missing_state",
+                    "error": "state parameter missing",
+                }),
+            )
+            .await;
+            return Err(AppError::bad_request("missing state"));
+        }
+    };
+
+    let payload = match ctx.security.csrf.open("state", &state_token) {
+        Ok(value) => value,
+        Err(err) => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &unknown_attrs,
+                json!({
+                    "flow_id": serde_json::Value::Null,
+                    "reason": "invalid_state_token",
+                    "error": err.to_string(),
+                }),
+            )
+            .await;
+            return Err(err.into());
+        }
+    };
+
+    let flow_state: FlowState = match serde_json::from_str(&payload) {
+        Ok(flow) => flow,
+        Err(err) => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &unknown_attrs,
+                json!({
+                    "flow_id": serde_json::Value::Null,
+                    "reason": "invalid_state_payload",
+                    "error": err.to_string(),
+                }),
+            )
+            .await;
+            return Err(err.into());
+        }
+    };
+
+    let attrs = AuditAttributes {
+        env: &flow_state.env,
+        tenant: &flow_state.tenant,
+        team: flow_state.team.as_deref(),
+        provider: &flow_state.provider,
+    };
+    let flow_id = flow_state.flow_id.clone();
+
+    let rate_key = rate_limit::key(
+        &flow_state.env,
+        &flow_state.tenant,
+        flow_state.team.as_deref(),
+        &flow_state.provider,
+    );
+    if ctx.rate_limiter.check(&rate_key).await.is_err() {
+        audit::emit(
+            &ctx.publisher,
+            "callback_error",
+            &attrs,
+            json!({
+                "flow_id": flow_id,
+                "reason": "rate_limited",
+                "error": "rate limit exceeded",
+            }),
+        )
+        .await;
+        return Err(AppError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded",
+        ));
+    }
+
+    if let Some(err_msg) = error {
+        audit::emit(
+            &ctx.publisher,
+            "callback_error",
+            &attrs,
+            json!({
+                "flow_id": flow_state.flow_id.clone(),
+                "reason": "provider_error",
+                "error": err_msg,
+            }),
+        )
+        .await;
         return Err(AppError::bad_request(format!(
-            "provider returned error: {err}"
+            "provider returned error: {err_msg}"
         )));
     }
 
-    let state_token = state.ok_or_else(|| AppError::bad_request("missing state"))?;
-    let code = code.ok_or_else(|| AppError::bad_request("missing code"))?;
+    let code = match code {
+        Some(value) => value,
+        None => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "missing_code",
+                    "error": "missing code parameter",
+                }),
+            )
+            .await;
+            return Err(AppError::bad_request("missing code"));
+        }
+    };
 
-    let payload = ctx.security.csrf.open("state", &state_token)?;
-    let flow_state: FlowState = serde_json::from_str(&payload)?;
-
-    let provider = ctx
-        .providers
-        .get(&flow_state.provider)
-        .ok_or_else(|| AppError::not_found("provider not registered"))?;
+    let provider = match ctx.providers.get(&flow_state.provider) {
+        Some(p) => p,
+        None => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "provider_not_registered",
+                    "error": "provider not registered",
+                }),
+            )
+            .await;
+            return Err(AppError::not_found("provider not registered"));
+        }
+    };
 
     let owner_kind = match flow_state.owner_kind {
         crate::storage::index::OwnerKindKey::User => OwnerKind::User {
@@ -72,17 +204,79 @@ where
         expires_at: current_epoch_seconds(),
     };
 
-    let token_set = provider.exchange_code(&claims, &code)?;
+    let token_set = match provider.exchange_code(&claims, &code) {
+        Ok(tokens) => tokens,
+        Err(err) => {
+            let app_err: AppError = err.into();
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "exchange_failed",
+                    "error": app_err.to_string(),
+                }),
+            )
+            .await;
+            return Err(app_err);
+        }
+    };
 
     if let Some(expires) = token_set.expires_in {
         claims.expires_at = claims.issued_at.saturating_add(expires);
     }
 
-    let ciphertext = ctx.security.jwe.encrypt(&token_set)?;
+    let ciphertext = match ctx.security.jwe.encrypt(&token_set) {
+        Ok(value) => value,
+        Err(err) => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "encrypt_failed",
+                    "error": err.to_string(),
+                }),
+            )
+            .await;
+            return Err(err.into());
+        }
+    };
     let stored = StoredToken::new(ciphertext, Some(claims.expires_at));
 
-    let secret_path = flow_state.secret_path()?;
-    ctx.secrets.put_json(&secret_path, &stored)?;
+    let secret_path = match flow_state.secret_path() {
+        Ok(path) => path,
+        Err(err) => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "secret_path_failed",
+                    "error": err.to_string(),
+                }),
+            )
+            .await;
+            return Err(err.into());
+        }
+    };
+    if let Err(err) = ctx.secrets.put_json(&secret_path, &stored) {
+        audit::emit(
+            &ctx.publisher,
+            "callback_error",
+            &attrs,
+            json!({
+                "flow_id": flow_state.flow_id.clone(),
+                "reason": "secret_store_failed",
+                "error": err.to_string(),
+            }),
+        )
+        .await;
+        return Err(err.into());
+    }
 
     let redirect_target = flow_state.redirect_uri.clone();
 
@@ -115,8 +309,50 @@ where
         "oauth.res.{}.{}.{}.{}.{}",
         &event.tenant, &event.env, team_segment, &event.provider, &event.flow_id
     );
-    let event_bytes = serde_json::to_vec(&event)?;
-    ctx.publisher.publish(&subject, &event_bytes).await?;
+    let event_bytes = match serde_json::to_vec(&event) {
+        Ok(bytes) => bytes,
+        Err(err) => {
+            audit::emit(
+                &ctx.publisher,
+                "callback_error",
+                &attrs,
+                json!({
+                    "flow_id": flow_state.flow_id.clone(),
+                    "reason": "event_encode_failed",
+                    "error": err.to_string(),
+                }),
+            )
+            .await;
+            return Err(err.into());
+        }
+    };
+    if let Err(err) = ctx.publisher.publish(&subject, &event_bytes).await {
+        audit::emit(
+            &ctx.publisher,
+            "callback_error",
+            &attrs,
+            json!({
+                "flow_id": flow_state.flow_id.clone(),
+                "reason": "event_publish_failed",
+                "error": err.to_string(),
+            }),
+        )
+        .await;
+        return Err(err.into());
+    }
+
+    audit::emit(
+        &ctx.publisher,
+        "callback_success",
+        &attrs,
+        json!({
+            "flow_id": flow_state.flow_id.clone(),
+            "owner_id": flow_state.owner_id.clone(),
+            "visibility": flow_state.visibility.as_str(),
+            "storage_path": secret_path.as_str(),
+        }),
+    )
+    .await;
 
     if let Some(target) = redirect_target {
         Ok(Redirect::temporary(&target).into_response())

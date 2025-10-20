@@ -1,15 +1,18 @@
 use std::str::FromStr;
 
-use axum::response::Redirect;
 use axum::{
     extract::{Path, Query, State},
-    response::IntoResponse,
+    http::StatusCode,
+    response::{IntoResponse, Redirect},
 };
 use oauth_core::types::{OAuthFlowRequest, OwnerKind, TenantCtx};
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::{
+    audit::{self, AuditAttributes},
     http::{error::AppError, state::FlowState},
+    rate_limit,
     security::pkce::PkcePair,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
 };
@@ -86,6 +89,17 @@ pub async fn process_start<S>(
 where
     S: SecretsManager + 'static,
 {
+    let rate_key = rate_limit::key(
+        &request.env,
+        &request.tenant,
+        request.team.as_deref(),
+        &request.provider,
+    );
+    ctx.rate_limiter
+        .check(&rate_key)
+        .await
+        .map_err(|_| AppError::new(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded"))?;
+
     let provider = ctx
         .providers
         .get(&request.provider)
@@ -133,6 +147,23 @@ where
     };
 
     let redirect = provider.build_authorize_redirect(&oauth_request)?;
+
+    let attrs = AuditAttributes {
+        env: &request.env,
+        tenant: &request.tenant,
+        team: request.team.as_deref(),
+        provider: &request.provider,
+    };
+    let audit_data = json!({
+        "flow_id": request.flow_id.clone(),
+        "owner_kind": request.owner_kind.as_str(),
+        "owner_id": request.owner_id.clone(),
+        "scopes": request.scopes.clone(),
+        "visibility": request.visibility.as_str(),
+        "redirect_uri": request.redirect_uri.clone(),
+    });
+
+    audit::emit(&ctx.publisher, "started", &attrs, audit_data).await;
 
     Ok((redirect.redirect_url, state_token, flow_state))
 }

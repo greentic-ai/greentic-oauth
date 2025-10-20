@@ -12,6 +12,7 @@ use axum::{
 use crate::{
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
+    rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{secrets_manager::SecretsManager, StorageIndex},
 };
@@ -27,6 +28,7 @@ where
     pub index: Arc<StorageIndex>,
     pub redirect_guard: Arc<RedirectGuard>,
     pub publisher: SharedPublisher,
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;

@@ -1,4 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use axum::{
@@ -19,6 +23,7 @@ use oauth_broker::{
         state::FlowState,
         AppContext, SharedContext,
     },
+    rate_limit::RateLimiter,
     security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService, SecurityConfig},
     storage::{
         env::EnvSecretsManager, index::ConnectionKey, secrets_manager::SecretsManager, StorageIndex,
@@ -158,6 +163,7 @@ fn build_context(
     index: Arc<StorageIndex>,
     redirect_guard: Arc<RedirectGuard>,
     publisher: SharedPublisher,
+    rate_limiter: Arc<RateLimiter>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: provider_registry,
@@ -166,6 +172,7 @@ fn build_context(
         index,
         redirect_guard,
         publisher,
+        rate_limiter,
     })
 }
 
@@ -185,6 +192,7 @@ async fn start_to_callback_happy_path() {
     );
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
 
     let context = build_context(
         provider_registry,
@@ -193,6 +201,7 @@ async fn start_to_callback_happy_path() {
         index.clone(),
         redirect_guard,
         publisher,
+        rate_limiter.clone(),
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -279,14 +288,41 @@ async fn start_to_callback_happy_path() {
     assert_eq!(connection.path, secret_path.as_str());
 
     let events = publisher_impl.events.lock().unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, "oauth.res.acme.prod.platform.fake.flow-123");
+    assert_eq!(events.len(), 3);
+    let mut events_map: HashMap<&str, &[u8]> = HashMap::new();
+    for (subject, payload) in events.iter() {
+        events_map.insert(subject.as_str(), payload.as_slice());
+    }
 
-    let event: CallbackEventPayload = serde_json::from_slice(&events[0].1).unwrap();
+    let started_subject = "oauth.audit.prod.acme.platform.fake.started";
+    let started_payload = events_map
+        .get(started_subject)
+        .expect("started audit event present");
+    let started_json: serde_json::Value =
+        serde_json::from_slice(started_payload).expect("started payload");
+    assert_eq!(started_json["action"], "started");
+    assert_eq!(started_json["data"]["flow_id"], "flow-123");
+    assert_eq!(started_json["data"]["owner_kind"], "user");
+
+    let res_subject = "oauth.res.acme.prod.platform.fake.flow-123";
+    let res_payload = events_map
+        .get(res_subject)
+        .expect("callback result event present");
+    let event: CallbackEventPayload = serde_json::from_slice(res_payload).unwrap();
     assert_eq!(event.flow_id, "flow-123");
     assert_eq!(event.token_handle.provider, "fake");
     assert_eq!(event.token_handle.subject, flow_state.owner_id);
     assert_eq!(event.storage_path, secret_path.as_str());
+
+    let success_subject = "oauth.audit.prod.acme.platform.fake.callback_success";
+    let success_payload = events_map
+        .get(success_subject)
+        .expect("callback success audit event present");
+    let success_json: serde_json::Value =
+        serde_json::from_slice(success_payload).expect("success payload");
+    assert_eq!(success_json["action"], "callback_success");
+    assert_eq!(success_json["data"]["flow_id"], "flow-123");
+    assert_eq!(success_json["data"]["storage_path"], secret_path.as_str());
 
     let status = status::get_status::<EnvSecretsManager>(
         Path(StatusPath {
@@ -333,6 +369,7 @@ async fn callback_state_validation_failure() {
     );
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
 
     let context = build_context(
         provider_registry,
@@ -341,6 +378,7 @@ async fn callback_state_validation_failure() {
         index,
         redirect_guard,
         publisher,
+        rate_limiter,
     );
 
     let response = callback::complete::<EnvSecretsManager>(
@@ -354,4 +392,201 @@ async fn callback_state_validation_failure() {
     .await;
 
     assert!(response.is_err());
+
+    let events = publisher_impl.events.lock().unwrap();
+    let error_subject = "oauth.audit.unknown.unknown._.unknown.callback_error";
+    assert!(
+        events.iter().any(|(subject, _)| subject == error_subject),
+        "expected callback_error audit event"
+    );
+}
+
+#[tokio::test]
+async fn start_rate_limit_enforced() {
+    let mut registry = ProviderRegistry::new();
+    let fake_provider = Arc::new(FakeProvider::new());
+    registry.insert("fake", fake_provider.clone() as Arc<dyn Provider>);
+    let provider_registry = Arc::new(registry);
+
+    let security = Arc::new(security_config());
+    let secrets =
+        Arc::new(EnvSecretsManager::new(tempdir().unwrap().path().to_path_buf()).unwrap());
+    let index = Arc::new(StorageIndex::new());
+    let redirect_guard = Arc::new(
+        RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
+    );
+    let publisher_impl = Arc::new(TestPublisher::default());
+    let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
+    let rate_limiter = Arc::new(RateLimiter::new(1, Duration::from_secs(60)));
+
+    let context = build_context(
+        provider_registry,
+        security,
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter,
+    );
+
+    initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "fake".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-123".into(),
+            scopes: None,
+            redirect_uri: None,
+            visibility: None,
+        }),
+        State(context.clone()),
+    )
+    .await
+    .expect("first start under limit");
+
+    let second = initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "fake".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-124".into(),
+            scopes: None,
+            redirect_uri: None,
+            visibility: None,
+        }),
+        State(context.clone()),
+    )
+    .await;
+
+    let err = match second {
+        Ok(_) => panic!("second start should be rate limited"),
+        Err(err) => err,
+    };
+    let response = err.into_response();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let events = publisher_impl.events.lock().unwrap();
+    let started_subject = "oauth.audit.prod.acme._.fake.started";
+    assert_eq!(
+        events
+            .iter()
+            .filter(|(subject, _)| subject == started_subject)
+            .count(),
+        1,
+        "only one started event expected"
+    );
+}
+
+#[tokio::test]
+async fn callback_rate_limit_enforced() {
+    let mut registry = ProviderRegistry::new();
+    let fake_provider = Arc::new(FakeProvider::new());
+    registry.insert("fake", fake_provider.clone() as Arc<dyn Provider>);
+    let provider_registry = Arc::new(registry);
+
+    let security = Arc::new(security_config());
+    let secrets =
+        Arc::new(EnvSecretsManager::new(tempdir().unwrap().path().to_path_buf()).unwrap());
+    let index = Arc::new(StorageIndex::new());
+    let redirect_guard = Arc::new(
+        RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
+    );
+    let publisher_impl = Arc::new(TestPublisher::default());
+    let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
+    let rate_limiter = Arc::new(RateLimiter::new(2, Duration::from_secs(60)));
+
+    let context = build_context(
+        provider_registry,
+        security.clone(),
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter.clone(),
+    );
+
+    let start_response = initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "fake".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-999".into(),
+            scopes: None,
+            redirect_uri: None,
+            visibility: None,
+        }),
+        State(context.clone()),
+    )
+    .await
+    .expect("start");
+
+    let location = start_response
+        .into_response()
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let state_param = Url::parse(&location)
+        .unwrap()
+        .query_pairs()
+        .find(|(k, _)| k == "state")
+        .map(|(_, v)| v.to_string())
+        .expect("state");
+
+    callback::complete::<EnvSecretsManager>(
+        Query(CallbackQuery {
+            code: Some("authcode".into()),
+            state: Some(state_param.clone()),
+            error: None,
+        }),
+        State(context.clone()),
+    )
+    .await
+    .expect("first callback");
+
+    let second = callback::complete::<EnvSecretsManager>(
+        Query(CallbackQuery {
+            code: Some("authcode".into()),
+            state: Some(state_param.clone()),
+            error: None,
+        }),
+        State(context.clone()),
+    )
+    .await;
+
+    let err = match second {
+        Ok(_) => panic!("second callback should be rate limited"),
+        Err(err) => err,
+    };
+    let response = err.into_response();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+    let events = publisher_impl.events.lock().unwrap();
+    let error_subject = "oauth.audit.prod.acme._.fake.callback_error";
+    assert!(
+        events
+            .iter()
+            .any(|(subject, payload)| subject == error_subject
+                && serde_json::from_slice::<serde_json::Value>(payload)
+                    .map(|value| value["data"]["reason"] == "rate_limited")
+                    .unwrap_or(false)),
+        "expected callback_error audit event with rate_limited reason"
+    );
 }

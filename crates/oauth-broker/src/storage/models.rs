@@ -13,6 +13,16 @@ pub enum Visibility {
     Tenant,
 }
 
+impl Visibility {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Visibility::Private => "private",
+            Visibility::Team => "team",
+            Visibility::Tenant => "tenant",
+        }
+    }
+}
+
 /// Metadata describing a stored provider connection.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Connection {

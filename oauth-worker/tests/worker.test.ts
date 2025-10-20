@@ -1,37 +1,10 @@
 import { Miniflare } from "miniflare";
-import { createServer, IncomingMessage, ServerResponse } from "http";
-import { AddressInfo } from "net";
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import esbuild from "esbuild";
 
-let brokerUrl: string;
 let mf: Miniflare;
-let server: ReturnType<typeof createServer>;
 
 beforeAll(async () => {
-  server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = req.url ?? "";
-    if (url.startsWith("/prod/acme/microsoft/start")) {
-      res.statusCode = 302;
-      res.setHeader("Location", "https://login.example.com/authorize");
-      res.end();
-      return;
-    }
-    if (url.startsWith("/callback")) {
-      res.statusCode = 200;
-      res.setHeader("Content-Type", "text/plain");
-      res.end("ok");
-      return;
-    }
-
-    res.statusCode = 404;
-    res.end("not found");
-  });
-
-  await new Promise<void>((resolve) => server.listen(0, resolve));
-  const address = server.address() as AddressInfo;
-  brokerUrl = `http://127.0.0.1:${address.port}/`;
-
   const bundle = await esbuild.build({
     entryPoints: ["src/index.ts"],
     bundle: true,
@@ -44,44 +17,68 @@ beforeAll(async () => {
   const script = bundle.outputFiles[0].text;
 
   mf = new Miniflare({
-    modules: [
+    compatibilityDate: "2024-10-01",
+    workers: [
       {
-        type: "ESModule",
-        path: "worker.mjs",
-        contents: script,
+        name: "app",
+        modules: true,
+        script,
+        serviceBindings: {
+          BROKER: "broker",
+        },
+      },
+      {
+        name: "broker",
+        modules: true,
+        script: `
+          export default {
+            async fetch(req) {
+              const url = new URL(req.url);
+              if (url.pathname.startsWith("/prod/acme/microsoft/start")) {
+                return new Response(null, {
+                  status: 302,
+                  headers: { Location: "https://idp.example.com/authorize?state=abc&code_challenge=xyz" }
+                });
+              }
+              if (url.pathname.startsWith("/callback")) {
+                return new Response(JSON.stringify({ ok: true, tenant: "acme" }), {
+                  status: 200,
+                  headers: { "content-type": "application/json" }
+                });
+              }
+              return new Response("not found", { status: 404 });
+            }
+          }
+        `,
       },
     ],
-    compatibilityDate: "2024-10-01",
-    bindings: {
-      BROKER_URL: brokerUrl,
-    },
   });
 });
 
 afterAll(async () => {
-  await mf?.dispose();
-  await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  await mf.dispose();
 });
 
 describe("oauth-worker", () => {
-  it("forwards /start requests to the broker and preserves redirects", async () => {
+  it("forwards /start requests and preserves redirect", async () => {
     const res = await mf.dispatchFetch(
-      "http://worker/start?env=prod&tenant=acme&provider=microsoft&owner_kind=user&owner_id=user-1&flow_id=flow-123"
+      "http://app/start?env=prod&tenant=acme&provider=microsoft&owner_kind=user&owner_id=user-1&flow_id=flow-123",
+      { redirect: "manual" }
     );
 
     expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("https://login.example.com/authorize");
+    expect(res.headers.get("Location")).toContain("https://idp.example.com/authorize");
   });
 
   it("returns an error when required params are missing", async () => {
-    const res = await mf.dispatchFetch("http://worker/start?tenant=acme&provider=microsoft");
+    const res = await mf.dispatchFetch("http://app/start?tenant=acme&provider=microsoft");
     expect(res.status).toBe(400);
   });
 
   it("renders a success page for callback responses", async () => {
-    const res = await mf.dispatchFetch("http://worker/callback?code=abc&state=xyz");
+    const res = await mf.dispatchFetch("http://app/callback?code=abc&state=xyz");
     expect(res.status).toBe(200);
     const body = await res.text();
-    expect(body).toContain("Authentication Complete");
+    expect(body).toContain("Authentication complete");
   });
 });

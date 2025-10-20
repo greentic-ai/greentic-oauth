@@ -1,9 +1,10 @@
 use std::{
     net::SocketAddr,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use async_trait::async_trait;
 use axum::{
     body::{self, Body},
     extract::State,
@@ -15,8 +16,9 @@ use axum::{
 use base64::Engine as _;
 use oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
-    events::{NoopPublisher, SharedPublisher},
+    events::{EventPublisher, PublishError, SharedPublisher},
     http::{self, AppContext, SharedContext},
+    rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{
         env::EnvSecretsManager,
@@ -25,23 +27,39 @@ use oauth_broker::{
         secrets_manager::{SecretPath, SecretsManager},
         StorageIndex,
     },
-    tokens::StoredToken,
+    tokens::{revoke_token, StoredToken},
 };
 use oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
     OwnerKind, TenantCtx, TokenHandleClaims, TokenSet,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::tempdir;
 use tokio::{net::TcpListener, task::JoinHandle};
 use tower::ServiceExt;
 
 const PROVIDER_ID: &str = "fake";
 
+#[derive(Default)]
+struct RecordingPublisher {
+    events: Mutex<Vec<(String, Vec<u8>)>>,
+}
+
+#[async_trait]
+impl EventPublisher for RecordingPublisher {
+    async fn publish(&self, subject: &str, payload: &[u8]) -> Result<(), PublishError> {
+        self.events
+            .lock()
+            .expect("publisher lock")
+            .push((subject.to_string(), payload.to_vec()));
+        Ok(())
+    }
+}
+
 #[tokio::test]
 async fn get_access_token_refreshes_near_expiry() {
     let temp = tempdir().expect("tempdir");
-    let (context, refresh_counter) = build_context(temp.path().to_path_buf());
+    let (context, refresh_counter, publisher) = build_context(temp.path().to_path_buf());
 
     let now = current_epoch_seconds();
     let setup = seed_token(
@@ -97,12 +115,23 @@ async fn get_access_token_refreshes_near_expiry() {
         .expect("decrypt token");
     assert_eq!(decrypted.access_token, "refreshed-token-1");
     assert_eq!(stored.expires_at, Some(expires_at));
+    let events = publisher.events.lock().expect("events lock").clone();
+    let refresh_subject = "oauth.audit.prod.acme._.fake.refresh";
+    assert!(
+        events
+            .iter()
+            .any(|(subject, payload)| subject == refresh_subject
+                && serde_json::from_slice::<Value>(payload)
+                    .map(|value| value["data"]["status"] == "success")
+                    .unwrap_or(false)),
+        "expected refresh audit event"
+    );
 }
 
 #[tokio::test]
 async fn signed_fetch_retries_after_unauthorized() {
     let temp = tempdir().expect("tempdir");
-    let (context, refresh_counter) = build_context(temp.path().to_path_buf());
+    let (context, refresh_counter, publisher) = build_context(temp.path().to_path_buf());
     let setup = seed_token(
         &context,
         TokenSeed {
@@ -112,7 +141,14 @@ async fn signed_fetch_retries_after_unauthorized() {
         },
     );
 
-    let (server_handle, addr, seen_tokens) = spawn_mock_service().await;
+    let (server_handle, addr, seen_tokens) = match spawn_mock_service().await {
+        Ok(values) => values,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipping signed_fetch test: {err}");
+            return;
+        }
+        Err(err) => panic!("bind mock service: {err}"),
+    };
 
     let app = http::router(context.clone());
     let request_body = json!({
@@ -156,7 +192,68 @@ async fn signed_fetch_retries_after_unauthorized() {
 
     assert_eq!(*refresh_counter.lock().expect("counter lock"), 1);
 
+    let events = publisher.events.lock().expect("events lock").clone();
+    let refresh_subject = "oauth.audit.prod.acme._.fake.refresh";
+    assert!(
+        events
+            .iter()
+            .any(|(subject, payload)| subject == refresh_subject
+                && serde_json::from_slice::<Value>(payload)
+                    .map(|value| value["data"]["status"] == "success"
+                        && value["data"]["reason"] == "forced")
+                    .unwrap_or(false)),
+        "expected forced refresh audit event"
+    );
+
+    let fetch_subject = "oauth.audit.prod.acme._.fake.signed_fetch";
+    assert!(
+        events
+            .iter()
+            .any(|(subject, payload)| subject == fetch_subject
+                && serde_json::from_slice::<Value>(payload)
+                    .map(|value| value["data"]["status"] == "success"
+                        && value["data"]["force_refresh"] == true)
+                    .unwrap_or(false)),
+        "expected signed_fetch success audit event with force_refresh"
+    );
+
     server_handle.abort();
+}
+
+#[tokio::test]
+async fn revoke_emits_audit_event_and_removes_secret() {
+    let temp = tempdir().expect("tempdir");
+    let (context, _refresh_counter, publisher) = build_context(temp.path().to_path_buf());
+    let setup = seed_token(
+        &context,
+        TokenSeed {
+            access_token: "initial-token",
+            refresh_token: Some("refresh-token-1"),
+            expires_at: current_epoch_seconds() + 3600,
+        },
+    );
+
+    revoke_token(&context, &setup.token_handle)
+        .await
+        .expect("revoke success");
+
+    let stored = context
+        .secrets
+        .get_json::<StoredToken>(&setup.secret_path)
+        .expect("secret lookup");
+    assert!(stored.is_none(), "secret should be deleted after revoke");
+
+    let events = publisher.events.lock().expect("events lock").clone();
+    let subject = "oauth.audit.prod.acme._.fake.revoke";
+    assert!(
+        events
+            .iter()
+            .any(|(event_subject, payload)| event_subject == subject
+                && serde_json::from_slice::<Value>(payload)
+                    .map(|value| value["data"]["status"] == "success")
+                    .unwrap_or(false)),
+        "expected revoke success audit event"
+    );
 }
 
 struct TokenSeed<'a> {
@@ -236,7 +333,11 @@ where
 
 fn build_context(
     secrets_dir: std::path::PathBuf,
-) -> (SharedContext<EnvSecretsManager>, Arc<Mutex<u32>>) {
+) -> (
+    SharedContext<EnvSecretsManager>,
+    Arc<Mutex<u32>>,
+    Arc<RecordingPublisher>,
+) {
     let mut registry = ProviderRegistry::new();
     let refresh_counter = Arc::new(Mutex::new(0u32));
     registry.insert(
@@ -252,7 +353,9 @@ fn build_context(
         RedirectGuard::from_list(vec!["https://app.example.com/callback".to_string()])
             .expect("redirect guard"),
     );
-    let publisher: SharedPublisher = Arc::new(NoopPublisher);
+    let publisher_impl = Arc::new(RecordingPublisher::default());
+    let publisher: SharedPublisher = publisher_impl.clone();
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
 
     let context = Arc::new(AppContext {
         providers,
@@ -261,16 +364,16 @@ fn build_context(
         index,
         redirect_guard,
         publisher,
+        rate_limiter,
     });
 
-    (context, refresh_counter)
+    (context, refresh_counter, publisher_impl)
 }
 
-async fn spawn_mock_service() -> (JoinHandle<()>, SocketAddr, Arc<Mutex<Vec<String>>>) {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind mock service");
-    let addr = listener.local_addr().expect("addr");
+async fn spawn_mock_service(
+) -> std::io::Result<(JoinHandle<()>, SocketAddr, Arc<Mutex<Vec<String>>>)> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
     let seen_tokens = Arc::new(Mutex::new(Vec::new()));
     let state_tokens = seen_tokens.clone();
 
@@ -302,7 +405,7 @@ async fn spawn_mock_service() -> (JoinHandle<()>, SocketAddr, Arc<Mutex<Vec<Stri
         }
     });
 
-    (handle, addr, seen_tokens)
+    Ok((handle, addr, seen_tokens))
 }
 
 fn security_config() -> SecurityConfig {

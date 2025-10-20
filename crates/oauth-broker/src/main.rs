@@ -1,10 +1,11 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use axum::Router;
 use oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
     http, nats,
+    rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{env::EnvSecretsManager, StorageIndex},
 };
@@ -51,6 +52,19 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         None
     };
 
+    let rate_limit_max = std::env::var("OAUTH_RATE_LIMIT_MAX")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(60);
+    let rate_limit_window_secs = std::env::var("OAUTH_RATE_LIMIT_WINDOW_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(60);
+    let rate_limiter = Arc::new(RateLimiter::new(
+        rate_limit_max,
+        Duration::from_secs(rate_limit_window_secs.max(1)),
+    ));
+
     let context = http::AppContext {
         providers,
         security,
@@ -58,6 +72,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         index,
         redirect_guard,
         publisher,
+        rate_limiter,
     };
     let shared_context = Arc::new(context);
 
