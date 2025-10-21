@@ -26,6 +26,7 @@ use crate::{
         SharedContext,
     },
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
+    telemetry_nats::{self, NatsHeaders},
     tokens::{perform_signed_fetch, resolve_access_token, SignedFetchOptions, SignedFetchOutcome},
 };
 
@@ -287,10 +288,19 @@ impl Writer {
         Ok(())
     }
 
-    async fn publish(&self, subject: &str, payload: &[u8]) -> Result<(), NatsError> {
-        let command = format!("PUB {} {}\r\n", subject, payload.len());
+    async fn publish(
+        &self,
+        subject: &str,
+        payload: &[u8],
+        headers: &NatsHeaders,
+    ) -> Result<(), NatsError> {
+        let header_block = headers.encode();
+        let header_len = header_block.len();
+        let total_len = header_len + payload.len();
+        let command = format!("HPUB {} {} {}\r\n", subject, header_len, total_len);
         let mut guard = self.inner.lock().await;
         guard.write_all(command.as_bytes()).await?;
+        guard.write_all(&header_block).await?;
         guard.write_all(payload).await?;
         guard.write_all(b"\r\n").await?;
         guard.flush().await?;
@@ -320,8 +330,10 @@ impl crate::events::EventPublisher for NatsEventPublisher {
             size = payload.len(),
             "publishing event to nats"
         );
+        let mut headers = NatsHeaders::default();
+        telemetry_nats::inject(&mut headers);
         self.writer
-            .publish(subject, payload)
+            .publish(subject, payload, &headers)
             .await
             .map_err(|err| crate::events::PublishError::Dispatch(err.to_string()))
     }
@@ -449,40 +461,83 @@ async fn handle_msg_line<S>(
 where
     S: SecretsManager + 'static,
 {
-    let mut parts = line.split_whitespace();
-    let _ = parts.next(); // MSG
-    let subject = parts
-        .next()
-        .ok_or_else(|| NatsError::Protocol("missing subject".into()))?;
-    let _sid = parts
-        .next()
-        .ok_or_else(|| NatsError::Protocol("missing sid".into()))?;
+    let mut headers = NatsHeaders::default();
+    let (subject, reply, payload) = if line.starts_with("HMSG") {
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        if tokens.len() != 5 && tokens.len() != 6 {
+            return Err(NatsError::Protocol("malformed HMSG frame".into()));
+        }
+        let subject = tokens
+            .get(1)
+            .ok_or_else(|| NatsError::Protocol("missing subject".into()))?
+            .to_string();
+        let reply = if tokens.len() == 6 {
+            Some(tokens[3].to_string())
+        } else {
+            None
+        };
+        let hdr_len_idx = if tokens.len() == 6 { 4 } else { 3 };
+        let total_len_idx = hdr_len_idx + 1;
+        let header_len = tokens[hdr_len_idx]
+            .parse::<usize>()
+            .map_err(|_| NatsError::Protocol("invalid header length".into()))?;
+        let total_len = tokens[total_len_idx]
+            .parse::<usize>()
+            .map_err(|_| NatsError::Protocol("invalid message length".into()))?;
+        if total_len < header_len {
+            return Err(NatsError::Protocol(
+                "total length smaller than header".into(),
+            ));
+        }
+        let mut header_bytes = vec![0u8; header_len];
+        reader.read_exact(&mut header_bytes).await?;
+        headers = NatsHeaders::from_bytes(&header_bytes).map_err(NatsError::Protocol)?;
+        let payload_len = total_len - header_len;
+        let mut payload = vec![0u8; payload_len];
+        reader.read_exact(&mut payload).await?;
+        let mut crlf = [0u8; 2];
+        reader.read_exact(&mut crlf).await?;
+        (subject, reply, payload)
+    } else {
+        let mut parts = line.split_whitespace();
+        let _ = parts.next(); // MSG
+        let subject = parts
+            .next()
+            .ok_or_else(|| NatsError::Protocol("missing subject".into()))?
+            .to_string();
+        let _sid = parts
+            .next()
+            .ok_or_else(|| NatsError::Protocol("missing sid".into()))?;
 
-    let third = parts
-        .next()
-        .ok_or_else(|| NatsError::Protocol("missing size".into()))?;
-    let (reply, size_token) = match parts.next() {
-        Some(fourth) => (Some(third.to_string()), fourth),
-        None => (None, third),
+        let third = parts
+            .next()
+            .ok_or_else(|| NatsError::Protocol("missing size".into()))?;
+        let (reply, size_token) = match parts.next() {
+            Some(fourth) => (Some(third.to_string()), fourth),
+            None => (None, third),
+        };
+        let size = size_token
+            .parse::<usize>()
+            .map_err(|_| NatsError::Protocol("invalid size".into()))?;
+        let mut payload = vec![0u8; size];
+        reader.read_exact(&mut payload).await?;
+        let mut crlf = [0u8; 2];
+        reader.read_exact(&mut crlf).await?;
+        (subject, reply, payload)
     };
-    let size = size_token
-        .parse::<usize>()
-        .map_err(|_| NatsError::Protocol("invalid size".into()))?;
-    let mut payload = vec![0u8; size];
-    reader.read_exact(&mut payload).await?;
-    let mut crlf = [0u8; 2];
-    reader.read_exact(&mut crlf).await?;
-
-    info!(
-        subject = %subject,
-        size = size,
-        "received NATS oauth request"
-    );
 
     let reply = reply.ok_or_else(|| NatsError::InvalidRequest("request missing reply".into()))?;
 
-    let response = process_request(subject, &payload, ctx).await?;
-    writer.publish(&reply, &response).await?;
+    let span = tracing::info_span!("nats.handle", subject = %subject, inbox = %reply);
+    let _entered = span.enter();
+    telemetry_nats::extract(&headers);
+
+    info!(subject = %subject, size = payload.len(), headers = headers.len(), "received NATS oauth request");
+
+    let response = process_request(&subject, &payload, ctx).await?;
+    let mut response_headers = NatsHeaders::default();
+    telemetry_nats::inject(&mut response_headers);
+    writer.publish(&reply, &response, &response_headers).await?;
     info!(subject = %reply, size = response.len(), "sent NATS oauth response");
     Ok(())
 }

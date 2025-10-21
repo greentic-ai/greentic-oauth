@@ -1,12 +1,16 @@
 use std::{env, error::Error, str::FromStr};
 
+use greentic_telemetry::init as telemetry_init;
+use greentic_telemetry::{set_context, CloudCtx, TelemetryInit};
 use oauth_sdk::{Client, ClientConfig, InitiateAuthRequest, OwnerKind, Visibility};
 use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    init_telemetry()?;
+
     let config = load_config()?;
-    let client = Client::connect(config).await?;
+    let client = Client::connect(config.clone()).await?;
 
     let flow_id = env::var("FLOW_ID").unwrap_or_else(|_| Uuid::new_v4().to_string());
     let owner_kind = env::var("OWNER_KIND")
@@ -22,6 +26,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| parse_scopes(&value))
         .unwrap_or_default();
 
+    set_context(CloudCtx {
+        tenant: Some(config.tenant.as_str()),
+        team: config.team.as_deref(),
+        flow: Some(flow_id.as_str()),
+        run_id: Some(flow_id.as_str()),
+    });
+
     let request = InitiateAuthRequest {
         owner_kind,
         owner_id,
@@ -36,6 +47,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     println!("state token: {}", response.state);
     println!("authorize at: {}", response.redirect_url);
 
+    greentic_telemetry::shutdown();
+    Ok(())
+}
+
+fn init_telemetry() -> Result<(), Box<dyn Error>> {
+    let deployment_env = env::var("ENV").unwrap_or_else(|_| "dev".to_string());
+    let deployment_env = Box::leak(deployment_env.into_boxed_str());
+    telemetry_init(
+        TelemetryInit {
+            service_name: "oauth-sdk-example-connect",
+            service_version: env!("CARGO_PKG_VERSION"),
+            deployment_env,
+        },
+        &["tenant", "team", "flow", "run_id"],
+    )?;
     Ok(())
 }
 

@@ -1,6 +1,9 @@
 use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
+use anyhow::Result;
 use axum::Router;
+use greentic_telemetry::prelude::*;
+use greentic_telemetry::{init as telemetry_init, set_context, CloudCtx, TelemetryInit};
 use oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
@@ -10,19 +13,24 @@ use oauth_broker::{
     storage::{env::EnvSecretsManager, StorageIndex},
 };
 use tokio::signal;
-use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    if let Err(error) = run().await {
+    if let Err(error) = bootstrap().await {
         tracing::error!("broker shut down with error: {error}");
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
+async fn bootstrap() -> Result<()> {
+    init_telemetry()?;
+    info!(component = "broker", "oauth broker starting up");
+    let result = run().await;
+    greentic_telemetry::shutdown();
+    result
+}
 
+async fn run() -> Result<()> {
     let providers = Arc::new(ProviderRegistry::from_env()?);
     let security = Arc::new(SecurityConfig::from_env()?);
     let secrets_dir =
@@ -30,6 +38,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let secrets = Arc::new(EnvSecretsManager::new(secrets_dir)?);
     let index = Arc::new(StorageIndex::new());
     let redirect_guard = Arc::new(RedirectGuard::from_env()?);
+    let config_root = Arc::new(PathBuf::from(
+        std::env::var("PROVIDER_CONFIG_ROOT").unwrap_or_else(|_| "./configs".into()),
+    ));
 
     let nats_options = nats::NatsOptions::from_env().ok();
 
@@ -73,6 +84,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root: config_root.clone(),
     };
     let shared_context = Arc::new(context);
 
@@ -109,7 +121,35 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+fn init_telemetry() -> Result<()> {
+    let deployment_env_owned = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
+    let deployment_env = Box::leak(deployment_env_owned.into_boxed_str());
+
+    telemetry_init(
+        TelemetryInit {
+            service_name: "greentic-oauth-broker",
+            service_version: env!("CARGO_PKG_VERSION"),
+            deployment_env,
+        },
+        &["tenant", "team", "flow", "run_id"],
+    )?;
+
+    let tenant = env_to_static("TENANT");
+    let team = env_to_static("TEAM");
+
+    set_context(CloudCtx {
+        tenant,
+        team,
+        flow: None,
+        run_id: None,
+    });
+
+    Ok(())
+}
+
+fn env_to_static(key: &str) -> Option<&'static str> {
+    std::env::var(key).ok().map(|value| {
+        let leaked: &'static mut str = Box::leak(value.into_boxed_str());
+        &*leaked
+    })
 }

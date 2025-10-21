@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     extract::{Query, State},
@@ -19,6 +19,7 @@ use oauth_broker::{
     storage::{
         env::EnvSecretsManager, index::ConnectionKey, secrets_manager::SecretsManager, StorageIndex,
     },
+    telemetry_nats::NatsHeaders,
 };
 use oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
@@ -114,7 +115,12 @@ fn security_config() -> SecurityConfig {
         JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=").unwrap();
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).unwrap();
     let csrf = CsrfKey::new(&[3u8; 32]).unwrap();
-    SecurityConfig { jws, jwe, csrf }
+    SecurityConfig {
+        jws,
+        jwe,
+        csrf,
+        discovery: None,
+    }
 }
 
 fn build_context(
@@ -125,6 +131,7 @@ fn build_context(
     redirect_guard: Arc<RedirectGuard>,
     publisher: SharedPublisher,
     rate_limiter: Arc<RateLimiter>,
+    config_root: Arc<PathBuf>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: registry,
@@ -134,6 +141,7 @@ fn build_context(
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root,
     })
 }
 
@@ -189,7 +197,7 @@ async fn nats_request_and_publish_flow() {
     });
 
     let (response_tx, response_rx) = oneshot::channel();
-    let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>)>(1);
+    let (event_tx, mut event_rx) = mpsc::channel::<(String, Vec<u8>, NatsHeaders)>(1);
     let server_handle = tokio::spawn(run_mock_server(
         listener,
         request_payload.clone(),
@@ -200,6 +208,7 @@ async fn nats_request_and_publish_flow() {
     let (writer, reader) = nats::connect(&options).await.unwrap();
     let publisher: SharedPublisher = Arc::new(NatsEventPublisher::new(writer.clone()));
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = build_context(
         providers,
@@ -209,6 +218,7 @@ async fn nats_request_and_publish_flow() {
         redirect_guard,
         publisher.clone(),
         rate_limiter,
+        config_root.clone(),
     );
 
     let request_handle = nats::spawn_request_listener(writer.clone(), reader, context.clone())
@@ -250,10 +260,11 @@ async fn nats_request_and_publish_flow() {
     assert!(stored.expires_at.is_some());
     assert_eq!(decrypted.access_token, "token-abc");
 
-    let (event_subject, event_payload) = time::timeout(Duration::from_secs(2), event_rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let (event_subject, event_payload, _event_headers) =
+        time::timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(event_subject, "oauth.res.acme.prod._.fake.flow-123");
 
     let event: CallbackEventPayload = serde_json::from_slice(&event_payload).unwrap();
@@ -279,7 +290,7 @@ async fn run_mock_server(
     listener: TcpListener,
     request_payload: serde_json::Value,
     response_tx: oneshot::Sender<Vec<u8>>,
-    event_tx: mpsc::Sender<(String, Vec<u8>)>,
+    event_tx: mpsc::Sender<(String, Vec<u8>, NatsHeaders)>,
 ) {
     let (stream, _) = listener.accept().await.unwrap();
     let (reader, mut writer) = stream.into_split();
@@ -312,6 +323,31 @@ async fn run_mock_server(
                 payload
             );
             writer.write_all(command.as_bytes()).await.unwrap();
+        } else if line.starts_with("HPUB") {
+            let mut parts = line.split_whitespace();
+            parts.next();
+            let subject = parts.next().unwrap().to_string();
+            let header_len: usize = parts.next().unwrap().parse().unwrap();
+            let total_len: usize = parts.next().unwrap().parse().unwrap();
+            let mut header_bytes = vec![0u8; header_len];
+            reader.read_exact(&mut header_bytes).await.unwrap();
+            let mut payload = vec![0u8; total_len - header_len];
+            reader.read_exact(&mut payload).await.unwrap();
+            let mut crlf = [0u8; 2];
+            reader.read_exact(&mut crlf).await.unwrap();
+            let headers =
+                NatsHeaders::from_bytes(&header_bytes).expect("parse nats headers in test");
+
+            if subject.starts_with("INBOX") {
+                if let Some(tx) = response_tx.take() {
+                    let _ = tx.send(payload);
+                }
+            } else if subject.starts_with("oauth.res") {
+                assert_eq!(subject, "oauth.res.acme.prod._.fake.flow-123");
+                let _ = event_tx.send((subject, payload, headers)).await;
+            }
+
+            writer.write_all(b"+OK\r\n").await.unwrap();
         } else if line.starts_with("PUB") {
             let mut parts = line.split_whitespace();
             parts.next();
@@ -328,7 +364,9 @@ async fn run_mock_server(
                 }
             } else if subject.starts_with("oauth.res") {
                 assert_eq!(subject, "oauth.res.acme.prod._.fake.flow-123");
-                let _ = event_tx.send((subject.to_string(), payload)).await;
+                let _ = event_tx
+                    .send((subject.to_string(), payload, NatsHeaders::default()))
+                    .await;
             }
 
             writer.write_all(b"+OK\r\n").await.unwrap();

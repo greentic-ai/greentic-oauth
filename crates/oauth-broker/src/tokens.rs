@@ -16,6 +16,7 @@ use crate::{
         index::ConnectionKey,
         secrets_manager::{SecretPath, SecretsManager},
     },
+    telemetry,
 };
 
 const REFRESH_WINDOW_SECS: u64 = 300;
@@ -76,6 +77,12 @@ where
     S: SecretsManager + 'static,
 {
     let claims = ctx.security.jws.verify(token_handle)?;
+    telemetry::set_request_context(
+        Some(claims.tenant.tenant.as_str()),
+        claims.tenant.team.as_deref(),
+        None,
+        Some(claims.subject.as_str()),
+    );
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,
@@ -264,6 +271,12 @@ where
             return Err(err.into());
         }
     };
+    telemetry::set_request_context(
+        Some(claims.tenant.tenant.as_str()),
+        claims.tenant.team.as_deref(),
+        None,
+        Some(claims.subject.as_str()),
+    );
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,
@@ -455,6 +468,12 @@ where
             return Err(err.into());
         }
     };
+    telemetry::set_request_context(
+        Some(claims.tenant.tenant.as_str()),
+        claims.tenant.team.as_deref(),
+        None,
+        Some(claims.subject.as_str()),
+    );
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,

@@ -1,0 +1,5 @@
+redirect_uri_templates:
+  - "https://oauth.greentic.ai/oauth/callback/{tenant}/{provider}"
+metadata:
+  tenant_id: "acme-001"
+  workspace: "acme-cloud"

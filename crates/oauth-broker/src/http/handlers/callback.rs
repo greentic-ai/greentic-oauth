@@ -14,6 +14,7 @@ use crate::{
     http::{error::AppError, state::FlowState},
     rate_limit,
     storage::{index::ConnectionKey, models::Connection, secrets_manager::SecretsManager},
+    telemetry,
     tokens::StoredToken,
 };
 
@@ -93,6 +94,13 @@ where
             return Err(err.into());
         }
     };
+
+    telemetry::set_request_context(
+        Some(flow_state.tenant.as_str()),
+        flow_state.team.as_deref(),
+        Some(flow_state.flow_id.as_str()),
+        Some(flow_state.flow_id.as_str()),
+    );
 
     let attrs = AuditAttributes {
         env: &flow_state.env,

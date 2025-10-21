@@ -1,17 +1,27 @@
 use std::{env, error::Error};
 
+use greentic_telemetry::init as telemetry_init;
+use greentic_telemetry::{set_context, CloudCtx, TelemetryInit};
 use oauth_sdk::{Client, ClientConfig, SignedFetchRequest};
 use reqwest::Method;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    init_telemetry()?;
     let config = load_config()?;
-    let client = Client::connect(config).await?;
+    let client = Client::connect(config.clone()).await?;
 
     let token_handle =
         env::var("TOKEN_HANDLE").map_err(|_| "TOKEN_HANDLE environment variable required")?;
     let fetch_url =
         env::var("FETCH_URL").unwrap_or_else(|_| "https://graph.microsoft.com/v1.0/me".to_string());
+
+    set_context(CloudCtx {
+        tenant: Some(config.tenant.as_str()),
+        team: config.team.as_deref(),
+        flow: None,
+        run_id: Some(token_handle.as_str()),
+    });
 
     let request = SignedFetchRequest::new(token_handle.clone(), Method::GET, fetch_url)
         .header("accept", "application/json");
@@ -23,6 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("body:\n{}", String::from_utf8_lossy(&response.body));
 
+    greentic_telemetry::shutdown();
     Ok(())
 }
 
@@ -43,4 +54,18 @@ fn load_config() -> Result<ClientConfig, Box<dyn Error>> {
         provider,
         team,
     })
+}
+
+fn init_telemetry() -> Result<(), Box<dyn Error>> {
+    let deployment_env = env::var("ENV").unwrap_or_else(|_| "dev".to_string());
+    let deployment_env = Box::leak(deployment_env.into_boxed_str());
+    telemetry_init(
+        TelemetryInit {
+            service_name: "oauth-sdk-example-signed-fetch",
+            service_version: env!("CARGO_PKG_VERSION"),
+            deployment_env,
+        },
+        &["tenant", "team", "flow", "run_id"],
+    )?;
+    Ok(())
 }

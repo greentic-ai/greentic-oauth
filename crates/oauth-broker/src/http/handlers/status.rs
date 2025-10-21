@@ -7,6 +7,7 @@ use serde::Deserialize;
 use crate::{
     http::error::AppError,
     storage::{models::Connection, secrets_manager::SecretsManager},
+    telemetry,
 };
 
 use super::super::SharedContext;
@@ -35,6 +36,8 @@ pub async fn get_status<S>(
 where
     S: SecretsManager + 'static,
 {
+    telemetry::set_request_context(Some(tenant.as_str()), team.as_deref(), None, None);
+
     let connections = ctx
         .index
         .list_provider(&provider, &env, &tenant, team.as_deref());

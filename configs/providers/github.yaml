@@ -1,0 +1,22 @@
+id: github
+display_name: GitHub
+grant_types:
+  - authorization_code
+auth_url: https://github.com/login/oauth/authorize
+token_url: https://github.com/login/oauth/access_token
+scopes:
+  - repo
+  - read:org
+  - admin:repo_hook
+redirect_uri_templates:
+  - "{api_base}/oauth/callback/{tenant}/{provider}"
+token_endpoint_auth_methods:
+  - client_secret_post
+docs_url: https://docs.github.com/en/developers/apps/building-oauth-apps
+notes: Personal access tokens are unsupported; use OAuth Apps per tenant.
+webhook_requirements:
+  needs_webhook: true
+  verify_doc: https://docs.github.com/en/webhooks
+metadata:
+  service: github
+  category: devtools

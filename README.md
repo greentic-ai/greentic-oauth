@@ -2,9 +2,23 @@
 
 Greentic OAuth stitches together the `oauth-broker`, SDKs, and worker tooling used by Greentic products to manage delegated access to third-party APIs. The broker performs OAuth handshakes, stores encrypted credentials, and exposes HTTP, NATS, WIT, and SDK contracts so other services can initiate flows, await results, and issue signed requests on behalf of tenants and teams.
 
+## Self-describing OAuth
+
+The broker now publishes a discovery surface so agents and digital workers can enumerate providers, inspect tenant-scoped requirements, and kick off flows without out-of-band documentation. Every discovery response is cache-friendly (`ETag`, `Cache-Control: max-age=60`) and, when configured, signed with the broker's discovery key so callers can verify integrity.
+
+Key artifacts:
+
+- `/.well-known/greentic-oauth` – feature manifest (capabilities, JWKS URI, linked indexes)
+- `/oauth/discovery/providers` – provider catalog
+- `/oauth/discovery/{tenant}/providers/{provider}` – merged descriptor with signature
+- `/oauth/discovery/{tenant}/providers/{provider}/requirements` – flow requirements per grant type
+- `/oauth/discovery/{tenant}/providers/{provider}/blueprint` – blueprint for the next action in a flow
+
+👉 See [docs/discovery.md](docs/discovery.md) for complete endpoint summaries, curl walkthroughs for Microsoft Graph and Slack, and guidance for MCP/WIT callers.
+
 ## Architecture
 
-![High-level architecture](assets/mermaid.jpg)
+![High-level architecture](assets/mermaid.png)
 
 1. **Client / UI** – requests a flow for a specific tenant/team and redirects the user to the provider consent screen.
 2. **OAuth Broker (`crates/oauth-broker`)** – exposes HTTP + NATS APIs, orchestrates provider flows, signs token handles (JWS), encrypts secrets (JWE), and publishes audit/NATS events.
@@ -123,6 +137,23 @@ Supporting types include `owner-kind` (`user` / `service`), optional `visibility
 - **CSRF/state** – `/start` issues a CSRF-protected state token sealed with `SecurityConfig::csrf`.
 - **Rate limiting & auditing** – in-memory `RateLimiter` bounds `/start` and `/callback`; all key actions emit structured audit logs and NATS events for downstream SIEM ingestion.
 - **Redirect whitelisting** – `RedirectGuard` enforces the allowed redirect URIs supplied via `OAUTH_REDIRECT_WHITELIST`.
+
+## Telemetry
+
+The broker emits OpenTelemetry traces and JSON logs through [`greentic-telemetry`](https://github.com/greentic/greentic-telemetry). Configure exporters via environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TELEMETRY_EXPORT` | `otlp-grpc` | Export strategy (`otlp-grpc`, `json-stdout`, etc.). |
+| `OTLP_ENDPOINT` | `http://otel-collector:4317` | OTLP collector endpoint; ignored for `json-stdout`. |
+| `OTLP_HEADERS` | _empty_ | Additional OTLP headers (e.g., auth tokens). |
+| `TELEMETRY_SAMPLING` | `parent` | Sampling strategy (`always_on`, `always_off`, `parent`). |
+| `CLOUD_PRESET` | `none` | Optional preset for cloud providers. |
+| `ENV` | `dev` | Deployment environment stamped into telemetry (`service.environment`). |
+| `TENANT` | _empty_ | Default tenant context applied to all spans/logs until overridden per request. |
+| `TEAM` | _empty_ | Default team context applied to all spans/logs until overridden per request. |
+
+Set `TELEMETRY_EXPORT=json-stdout` during local development to stream structured logs containing `service.name=greentic-oauth-broker`, `service.environment`, and the default tenant/team context.
 
 ## Provider Onboarding Guide
 

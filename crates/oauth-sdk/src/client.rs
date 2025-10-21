@@ -190,6 +190,93 @@ impl Client {
         })
     }
 
+    /// List available provider identifiers from the broker discovery API.
+    pub async fn list_providers(&self) -> Result<Vec<String>, SdkError> {
+        let url = self.http_base.join("oauth/discovery/providers")?;
+        let response = self.http.get(url).send().await?;
+        Self::ensure_success(response.status())?;
+        let body = response.text().await?;
+        let providers: Vec<ProviderSummary> = serde_json::from_str(&body)?;
+        Ok(providers.into_iter().map(|provider| provider.id).collect())
+    }
+
+    /// Fetch the merged provider descriptor scoped to the supplied context.
+    pub async fn get_provider_descriptor_json(
+        &self,
+        tenant: &str,
+        provider: &str,
+        team: Option<&str>,
+        user: Option<&str>,
+    ) -> Result<String, SdkError> {
+        let mut url = self
+            .http_base
+            .join(&format!("oauth/discovery/{tenant}/providers/{provider}"))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            if let Some(team) = team {
+                pairs.append_pair("team", team);
+            }
+            if let Some(user) = user {
+                pairs.append_pair("user", user);
+            }
+        }
+        let response = self.http.get(url).send().await?;
+        Self::ensure_success(response.status())?;
+        let body = response.text().await?;
+        let json: serde_json::Value = serde_json::from_str(&body)?;
+        Ok(json.to_string())
+    }
+
+    /// Retrieve configuration requirements for the supplied provider context.
+    pub async fn get_config_requirements_json(
+        &self,
+        tenant: &str,
+        provider: &str,
+        team: Option<&str>,
+        user: Option<&str>,
+    ) -> Result<String, SdkError> {
+        let path = format!("oauth/discovery/{tenant}/providers/{provider}/requirements");
+        let mut url = self.http_base.join(&path)?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            if let Some(team) = team {
+                pairs.append_pair("team", team);
+            }
+            if let Some(user) = user {
+                pairs.append_pair("user", user);
+            }
+        }
+        let response = self.http.get(url).send().await?;
+        Self::ensure_success(response.status())?;
+        let body = response.text().await?;
+        let json: serde_json::Value = serde_json::from_str(&body)?;
+        Ok(json.to_string())
+    }
+
+    /// Generate a flow blueprint for the supplied grant type and context.
+    pub async fn start_flow_blueprint_json(
+        &self,
+        tenant: &str,
+        provider: &str,
+        grant_type: &str,
+        team: Option<&str>,
+        user: Option<&str>,
+    ) -> Result<String, SdkError> {
+        let url = self.http_base.join(&format!(
+            "oauth/discovery/{tenant}/providers/{provider}/blueprint"
+        ))?;
+        let payload = HttpBlueprintRequest {
+            grant_type,
+            team,
+            user,
+        };
+        let response = self.http.post(url).json(&payload).send().await?;
+        Self::ensure_success(response.status())?;
+        let body = response.text().await?;
+        let json: serde_json::Value = serde_json::from_str(&body)?;
+        Ok(json.to_string())
+    }
+
     fn request_subject(&self, flow_id: &str) -> String {
         let team_segment = self.team.as_deref().unwrap_or("_");
         format!(
@@ -438,6 +525,11 @@ struct HttpAccessTokenResponse {
     expires_at: u64,
 }
 
+#[derive(Deserialize)]
+struct ProviderSummary {
+    id: String,
+}
+
 #[derive(Serialize)]
 struct HttpSignedFetchRequest<'a> {
     token_handle: &'a str,
@@ -461,6 +553,15 @@ struct HttpSignedFetchResponse {
     headers: Vec<HttpHeaderOwned>,
     body: String,
     body_encoding: String,
+}
+
+#[derive(Serialize)]
+struct HttpBlueprintRequest<'a> {
+    grant_type: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user: Option<&'a str>,
 }
 
 #[derive(Deserialize)]

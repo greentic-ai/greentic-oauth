@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FlowBlueprint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "flow_id",
+    "grant_type",
+    "state",
+    "steps",
+    "next_actions",
+    "webhooks",
+    "expires_at"
+  ],
+  "properties": {
+    "flow_id": { "type": "string" },
+    "grant_type": { "type": "string" },
+    "state": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/Step" }
+    },
+    "next_actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ActionLink" }
+    },
+    "webhooks": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/WebhookHint" }
+    },
+    "expires_at": { "type": ["string", "null"] }
+  },
+  "$defs": {
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "inputs_needed", "outputs", "automatable"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "inputs_needed": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/InputSpec" }
+        },
+        "outputs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "automatable": { "type": "boolean" }
+      }
+    },
+    "InputSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "kind", "required"],
+      "properties": {
+        "key": { "type": "string" },
+        "kind": { "type": "string" },
+        "required": { "type": "boolean" },
+        "allowed_values": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        },
+        "default": { "type": ["string", "null"] }
+      }
+    },
+    "ActionLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rel", "href", "method"],
+      "properties": {
+        "rel": { "type": "string" },
+        "href": { "type": "string" },
+        "method": { "type": "string" },
+        "accepts": { "type": ["string", "null"] },
+        "returns": { "type": ["string", "null"] }
+      }
+    },
+    "WebhookHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event"],
+      "properties": {
+        "event": { "type": "string" },
+        "verify": { "type": ["string", "null"] },
+        "example_payload": {
+          "type": ["object", "array", "string", "number", "boolean", "null"]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ConfigRequirements",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["provider_id", "tenant", "grant_paths"],
+  "properties": {
+    "provider_id": {"type": "string"},
+    "tenant": {"type": "string"},
+    "team": {"type": ["string", "null"]},
+    "user": {"type": ["string", "null"]},
+    "grant_paths": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/GrantPath"}
+    }
+  },
+  "$defs": {
+    "GrantPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grant_type", "steps", "action_links", "expected_artifacts"],
+      "properties": {
+        "grant_type": {"type": "string"},
+        "steps": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/Step"}
+        },
+        "action_links": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/ActionLink"}
+        },
+        "expected_artifacts": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "inputs_needed", "outputs", "automatable"],
+      "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "inputs_needed": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/InputSpec"}
+        },
+        "outputs": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "automatable": {"type": "boolean"}
+      }
+    },
+    "InputSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "kind", "required"],
+      "properties": {
+        "key": {"type": "string"},
+        "kind": {"type": "string"},
+        "required": {"type": "boolean"},
+        "allowed_values": {
+          "type": ["array", "null"],
+          "items": {"type": "string"}
+        },
+        "default": {"type": ["string", "null"]}
+      }
+    },
+    "ActionLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rel", "href", "method"],
+      "properties": {
+        "rel": {"type": "string"},
+        "href": {"type": "string"},
+        "method": {"type": "string"},
+        "accepts": {"type": ["string", "null"]},
+        "returns": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

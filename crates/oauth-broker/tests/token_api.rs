@@ -1,5 +1,6 @@
 use std::{
     net::SocketAddr,
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -356,6 +357,7 @@ fn build_context(
     let publisher_impl = Arc::new(RecordingPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone();
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = Arc::new(AppContext {
         providers,
@@ -365,6 +367,7 @@ fn build_context(
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root,
     });
 
     (context, refresh_counter, publisher_impl)
@@ -415,7 +418,12 @@ fn security_config() -> SecurityConfig {
         .expect("jws");
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).expect("jwe");
     let csrf = CsrfKey::new(&[3u8; 32]).expect("csrf");
-    SecurityConfig { jws, jwe, csrf }
+    SecurityConfig {
+        jws,
+        jwe,
+        csrf,
+        discovery: None,
+    }
 }
 
 struct TestProvider {

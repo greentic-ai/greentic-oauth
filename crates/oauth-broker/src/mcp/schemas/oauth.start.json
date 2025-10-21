@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["tenant", "provider", "grant_type"],
+  "properties": {
+    "tenant": { "type": "string" },
+    "provider": { "type": "string" },
+    "grant_type": { "type": "string" },
+    "team": { "type": "string" },
+    "user": { "type": "string" }
+  }
+}

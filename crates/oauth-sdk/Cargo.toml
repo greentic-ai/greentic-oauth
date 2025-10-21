@@ -24,3 +24,4 @@ async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }
+greentic-telemetry = { version = "0.1", features = ["otlp-grpc", "wasm-host"] }

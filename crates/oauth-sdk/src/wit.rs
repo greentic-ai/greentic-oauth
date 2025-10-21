@@ -131,6 +131,68 @@ impl broker::Host for BrokerHost {
     }
 }
 
+#[async_trait]
+impl discovery::Host for BrokerHost {
+    type Error = anyhow::Error;
+
+    async fn list_providers(&mut self) -> AnyhowResult<Vec<String>> {
+        let providers = self.client.list_providers().await.map_err(map_sdk_error)?;
+        Ok(providers)
+    }
+
+    async fn get_descriptor(
+        &mut self,
+        tenant: String,
+        provider: String,
+        team: Option<String>,
+        user: Option<String>,
+    ) -> AnyhowResult<String> {
+        let descriptor = self
+            .client
+            .get_provider_descriptor_json(&tenant, &provider, team.as_deref(), user.as_deref())
+            .await
+            .map_err(map_sdk_error)?;
+        Ok(descriptor)
+    }
+
+    async fn get_requirements(
+        &mut self,
+        tenant: String,
+        provider: String,
+        team: Option<String>,
+        user: Option<String>,
+    ) -> AnyhowResult<String> {
+        let requirements = self
+            .client
+            .get_config_requirements_json(&tenant, &provider, team.as_deref(), user.as_deref())
+            .await
+            .map_err(map_sdk_error)?;
+        Ok(requirements)
+    }
+
+    async fn start_flow(
+        &mut self,
+        tenant: String,
+        provider: String,
+        grant_type: String,
+        team: Option<String>,
+        user: Option<String>,
+    ) -> AnyhowResult<String> {
+        let blueprint = self
+            .client
+            .start_flow_blueprint_json(
+                &tenant,
+                &provider,
+                &grant_type,
+                team.as_deref(),
+                user.as_deref(),
+            )
+            .await
+            .map_err(map_sdk_error)?;
+        Ok(blueprint)
+    }
+}
+
 fn to_wit_initiate_response(response: InitiateAuthResponse) -> broker::InitiateResponse {
     broker::InitiateResponse {
         flow_id: response.flow_id,

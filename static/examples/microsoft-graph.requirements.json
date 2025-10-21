@@ -1,0 +1,204 @@
+{
+  "provider_id": "microsoft-graph",
+  "tenant": "acme",
+  "team": "ops",
+  "user": "alice@example.com",
+  "grant_paths": [
+    {
+      "grant_type": "authorization_code",
+      "steps": [
+        {
+          "name": "register-app",
+          "description": "Register an OAuth application with the provider and obtain client credentials.",
+          "inputs_needed": [],
+          "outputs": ["client_id", "client_secret"],
+          "automatable": false
+        },
+        {
+          "name": "user-consent",
+          "description": "Direct the user to the Greentic broker authorize URL to grant access.",
+          "inputs_needed": [
+            {
+              "key": "client_id",
+              "kind": "string",
+              "required": false,
+              "allowed_values": null,
+              "default": "managed-by-greentic"
+            },
+            {
+              "key": "redirect_uri",
+              "kind": "url",
+              "required": true,
+              "allowed_values": null,
+              "default": "https://oauth.greentic.ai/oauth/callback/acme/microsoft-graph"
+            },
+            {
+              "key": "scopes",
+              "kind": "enum",
+              "required": true,
+              "allowed_values": [
+                "offline_access",
+                "openid",
+                "User.Read",
+                "Mail.Read",
+                "Calendars.Read",
+                "Mail.Send",
+                "Sites.Read.All"
+              ],
+              "default": "offline_access openid User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
+            }
+          ],
+          "outputs": ["authorization_code"],
+          "automatable": false
+        },
+        {
+          "name": "exchange-code",
+          "description": "The broker exchanges the authorization code for tokens.",
+          "inputs_needed": [],
+          "outputs": ["access_token", "refresh_token", "expires_in"],
+          "automatable": true
+        }
+      ],
+      "action_links": [
+        {
+          "rel": "start-authorization",
+          "href": "{api_base}/:env/acme/microsoft-graph/start?team=ops&user=alice%40example.com",
+          "method": "GET",
+          "accepts": null,
+          "returns": "text/html"
+        }
+      ],
+      "expected_artifacts": [
+        "access_token",
+        "refresh_token",
+        "expires_in",
+        "scopes"
+      ]
+    },
+    {
+      "grant_type": "refresh_token",
+      "steps": [],
+      "action_links": [],
+      "expected_artifacts": ["access_token"]
+    },
+    {
+      "grant_type": "client_credentials",
+      "steps": [
+        {
+          "name": "register-app",
+          "description": "Register a confidential client with the provider and obtain client credentials.",
+          "inputs_needed": [],
+          "outputs": ["client_id", "client_secret"],
+          "automatable": false
+        },
+        {
+          "name": "token-request",
+          "description": "Request an access token using the client credentials grant via the broker.",
+          "inputs_needed": [
+            {
+              "key": "client_id",
+              "kind": "string",
+              "required": true,
+              "allowed_values": null,
+              "default": "managed-by-greentic"
+            },
+            {
+              "key": "client_secret",
+              "kind": "secret",
+              "required": true,
+              "allowed_values": null,
+              "default": null
+            },
+            {
+              "key": "scopes",
+              "kind": "enum",
+              "required": false,
+              "allowed_values": [
+                "offline_access",
+                "openid",
+                "User.Read",
+                "Mail.Read",
+                "Calendars.Read",
+                "Mail.Send",
+                "Sites.Read.All"
+              ],
+              "default": null
+            }
+          ],
+          "outputs": ["access_token", "expires_in"],
+          "automatable": true
+        }
+      ],
+      "action_links": [
+        {
+          "rel": "token-request",
+          "href": "{api_base}/:env/acme/microsoft-graph/token?team=ops&user=alice%40example.com",
+          "method": "POST",
+          "accepts": "application/json",
+          "returns": "application/json"
+        }
+      ],
+      "expected_artifacts": [
+        "access_token",
+        "expires_in",
+        "scopes"
+      ]
+    },
+    {
+      "grant_type": "device_code",
+      "steps": [
+        {
+          "name": "request-device-code",
+          "description": "Request a device code from the provider via the broker.",
+          "inputs_needed": [
+            {
+              "key": "scopes",
+              "kind": "enum",
+              "required": true,
+              "allowed_values": [
+                "offline_access",
+                "openid",
+                "User.Read",
+                "Mail.Read",
+                "Calendars.Read",
+                "Mail.Send",
+                "Sites.Read.All"
+              ],
+              "default": "offline_access openid User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
+            }
+          ],
+          "outputs": ["device_code", "user_code", "verification_uri"],
+          "automatable": true
+        },
+        {
+          "name": "user-verification",
+          "description": "Prompt the user to enter the user code at the provider verification URL.",
+          "inputs_needed": [],
+          "outputs": [],
+          "automatable": false
+        },
+        {
+          "name": "poll-token",
+          "description": "Broker polls the token endpoint until the user authorises the device.",
+          "inputs_needed": [],
+          "outputs": ["access_token", "refresh_token", "expires_in"],
+          "automatable": true
+        }
+      ],
+      "action_links": [
+        {
+          "rel": "device-code",
+          "href": "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode",
+          "method": "POST",
+          "accepts": "application/json",
+          "returns": "application/json"
+        }
+      ],
+      "expected_artifacts": [
+        "access_token",
+        "refresh_token",
+        "expires_in"
+      ]
+    }
+  ]
+}

@@ -67,3 +67,26 @@ interface broker {
     };
     signed-fetch: func(request: signed-fetch-request) -> signed-fetch-response;
 }
+
+interface discovery {
+    list-providers: func() -> list<string>;
+    get-descriptor: func(
+        tenant: string,
+        provider: string,
+        team: option<string>,
+        user: option<string>,
+    ) -> string;
+    get-requirements: func(
+        tenant: string,
+        provider: string,
+        team: option<string>,
+        user: option<string>,
+    ) -> string;
+    start-flow: func(
+        tenant: string,
+        provider: string,
+        grant-type: string,
+        team: option<string>,
+        user: option<string>,
+    ) -> string;
+}

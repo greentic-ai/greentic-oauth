@@ -18,7 +18,7 @@ const handler = {
       case "/start":
         return handleStart(request, env, url);
       case "/callback":
-        return handleCallback(url, env);
+        return handleCallback(request, url, env);
       default:
         return errorResponse(404, "Not Found");
     }
@@ -36,6 +36,8 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
   const envName = pickParam(params, "env");
   const tenant = pickParam(params, "tenant");
   const provider = pickParam(params, "provider");
+  const team = pickParam(params, "team");
+  const flowId = pickParam(params, "flow_id");
 
   if (!envName || !tenant || !provider) {
     return errorResponse(400, "Missing required parameters: env, tenant, provider");
@@ -54,20 +56,30 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
   const query = forwardedParams.toString();
   const path = `/${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start${query ? `?${query}` : ""}`;
 
+  const headers = applyTelemetryHeaders(request.headers, {
+    tenant,
+    team,
+    flow: flowId,
+    runId: flowId,
+  });
+
   const response = await brokerFetch(env, path, {
     method: "GET",
-    headers: request.headers,
+    headers,
     redirect: "manual",
   });
 
   return redirectOrPassThrough(response);
 }
 
-async function handleCallback(url: URL, env: Env): Promise<Response> {
+async function handleCallback(request: Request, url: URL, env: Env): Promise<Response> {
   const path = `/oauth/callback${url.search}`;
+
+  const headers = applyTelemetryHeaders(request.headers, {});
 
   const response = await brokerFetch(env, path, {
     method: "GET",
+    headers,
     redirect: "manual",
   });
 
@@ -119,4 +131,52 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+type TelemetryHeaders = {
+  tenant?: string | null;
+  team?: string | null;
+  flow?: string | null;
+  runId?: string | null;
+};
+
+function applyTelemetryHeaders(source: Headers | null, context: TelemetryHeaders): Headers {
+  const headers = new Headers(source ?? undefined);
+  const trace = headers.get("traceparent") ?? createTraceparent();
+  headers.set("traceparent", trace);
+
+  if (context.tenant) {
+    headers.set("x-tenant", context.tenant);
+  } else {
+    headers.delete("x-tenant");
+  }
+  if (context.team) {
+    headers.set("x-team", context.team);
+  } else {
+    headers.delete("x-team");
+  }
+  if (context.flow) {
+    headers.set("x-flow", context.flow);
+  } else {
+    headers.delete("x-flow");
+  }
+  if (context.runId) {
+    headers.set("x-run-id", context.runId);
+  } else {
+    headers.delete("x-run-id");
+  }
+
+  return headers;
+}
+
+function createTraceparent(): string {
+  const traceId = randomHex(16);
+  const spanId = randomHex(8);
+  return `00-${traceId}-${spanId}-01`;
+}
+
+function randomHex(bytes: number): string {
+  const buffer = new Uint8Array(bytes);
+  crypto.getRandomValues(buffer);
+  return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("");
 }

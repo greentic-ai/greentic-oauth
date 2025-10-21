@@ -1,0 +1,10 @@
+redirect_uri_templates:
+  - "https://oauth.greentic.ai/oauth/callback/{tenant}/{provider}"
+scopes_add:
+  - Mail.Send
+token_endpoint_auth_methods:
+  - private_key_jwt
+notes: "Acme default Graph policies with central redirect handler."
+metadata:
+  tenant_id: "acme-001"
+  support_contact: "sso-ops@acme.example"

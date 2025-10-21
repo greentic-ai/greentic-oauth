@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderDescriptor",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "display_name",
+    "grant_types",
+    "token_url",
+    "scopes",
+    "redirect_uri_templates",
+    "token_endpoint_auth_methods"
+  ],
+  "properties": {
+    "id": { "type": "string" },
+    "display_name": { "type": "string" },
+    "grant_types": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "auth_url": { "type": "string" },
+    "token_url": { "type": "string" },
+    "device_code_url": { "type": ["string", "null"] },
+    "scopes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "redirect_uri_templates": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "token_endpoint_auth_methods": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "docs_url": { "type": ["string", "null"] },
+    "webhook_requirements": { "$ref": "#/$defs/WebhookReq" },
+    "notes": { "type": ["string", "null"] },
+    "metadata": {
+      "type": ["object", "array", "string", "number", "boolean", "null"]
+    }
+  },
+  "$defs": {
+    "WebhookReq": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["needs_webhook"],
+      "properties": {
+        "needs_webhook": { "type": "boolean" },
+        "verify_doc": { "type": ["string", "null"] },
+        "event_examples": {
+          "type": ["array", "null"],
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

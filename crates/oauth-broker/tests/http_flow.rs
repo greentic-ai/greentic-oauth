@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -153,7 +154,12 @@ fn security_config() -> SecurityConfig {
     let jwe = JweVault::from_key_bytes(&[2u8; 32]).expect("jwe");
     let csrf = CsrfKey::new(&[3u8; 32]).expect("csrf");
 
-    SecurityConfig { jws, jwe, csrf }
+    SecurityConfig {
+        jws,
+        jwe,
+        csrf,
+        discovery: None,
+    }
 }
 
 fn build_context(
@@ -164,6 +170,7 @@ fn build_context(
     redirect_guard: Arc<RedirectGuard>,
     publisher: SharedPublisher,
     rate_limiter: Arc<RateLimiter>,
+    config_root: Arc<PathBuf>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: provider_registry,
@@ -173,6 +180,7 @@ fn build_context(
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root,
     })
 }
 
@@ -193,6 +201,7 @@ async fn start_to_callback_happy_path() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = build_context(
         provider_registry,
@@ -202,6 +211,7 @@ async fn start_to_callback_happy_path() {
         redirect_guard,
         publisher,
         rate_limiter.clone(),
+        config_root.clone(),
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -372,6 +382,7 @@ async fn callback_state_validation_failure() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = build_context(
         provider_registry,
@@ -381,6 +392,7 @@ async fn callback_state_validation_failure() {
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root.clone(),
     );
 
     let response = callback::complete::<EnvSecretsManager>(
@@ -420,6 +432,7 @@ async fn start_rate_limit_enforced() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(1, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = build_context(
         provider_registry,
@@ -429,6 +442,7 @@ async fn start_rate_limit_enforced() {
         redirect_guard,
         publisher,
         rate_limiter,
+        config_root.clone(),
     );
 
     initiate::start::<EnvSecretsManager>(
@@ -506,6 +520,7 @@ async fn callback_rate_limit_enforced() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(2, Duration::from_secs(60)));
+    let config_root = Arc::new(PathBuf::from("./configs"));
 
     let context = build_context(
         provider_registry,
@@ -515,6 +530,7 @@ async fn callback_rate_limit_enforced() {
         redirect_guard,
         publisher,
         rate_limiter.clone(),
+        config_root.clone(),
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(

@@ -1,0 +1,7 @@
+scopes_add:
+  - Sites.Read.All
+notes: "Ops automation flows require SharePoint site discovery."
+metadata:
+  team_slug: "ops"
+  approvals:
+    owner: "operations"

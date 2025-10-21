@@ -1,0 +1,77 @@
+{
+  "provider_id": "slack",
+  "tenant": "acme",
+  "team": null,
+  "user": null,
+  "grant_paths": [
+    {
+      "grant_type": "authorization_code",
+      "steps": [
+        {
+          "name": "register-app",
+          "description": "Register an OAuth application with the provider and obtain client credentials.",
+          "inputs_needed": [],
+          "outputs": ["client_id", "client_secret"],
+          "automatable": false
+        },
+        {
+          "name": "user-consent",
+          "description": "Direct the user to the Greentic broker authorize URL to grant access.",
+          "inputs_needed": [
+            {
+              "key": "client_id",
+              "kind": "string",
+              "required": false,
+              "allowed_values": null,
+              "default": "managed-by-greentic"
+            },
+            {
+              "key": "redirect_uri",
+              "kind": "url",
+              "required": true,
+              "allowed_values": null,
+              "default": "https://oauth.greentic.ai/oauth/callback/acme/slack"
+            },
+            {
+              "key": "scopes",
+              "kind": "enum",
+              "required": true,
+              "allowed_values": ["channels:read", "chat:write", "files:write"],
+              "default": "channels:read chat:write files:write"
+            }
+          ],
+          "outputs": ["authorization_code"],
+          "automatable": false
+        },
+        {
+          "name": "exchange-code",
+          "description": "The broker exchanges the authorization code for tokens.",
+          "inputs_needed": [],
+          "outputs": ["access_token", "refresh_token", "expires_in"],
+          "automatable": true
+        }
+      ],
+      "action_links": [
+        {
+          "rel": "start-authorization",
+          "href": "{api_base}/:env/acme/slack/start",
+          "method": "GET",
+          "accepts": null,
+          "returns": "text/html"
+        }
+      ],
+      "expected_artifacts": [
+        "access_token",
+        "refresh_token",
+        "expires_in",
+        "scopes"
+      ]
+    },
+    {
+      "grant_type": "refresh_token",
+      "steps": [],
+      "action_links": [],
+      "expected_artifacts": ["access_token"]
+    }
+  ]
+}

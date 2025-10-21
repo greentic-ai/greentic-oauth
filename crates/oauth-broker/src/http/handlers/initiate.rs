@@ -15,6 +15,7 @@ use crate::{
     rate_limit,
     security::pkce::PkcePair,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
+    telemetry,
 };
 
 use super::super::SharedContext;
@@ -89,6 +90,13 @@ pub async fn process_start<S>(
 where
     S: SecretsManager + 'static,
 {
+    telemetry::set_request_context(
+        Some(request.tenant.as_str()),
+        request.team.as_deref(),
+        Some(request.flow_id.as_str()),
+        Some(request.flow_id.as_str()),
+    );
+
     let rate_key = rate_limit::key(
         &request.env,
         &request.tenant,

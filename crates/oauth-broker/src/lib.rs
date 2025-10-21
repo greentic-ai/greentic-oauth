@@ -1,10 +1,14 @@
 pub mod audit;
 pub mod config;
+pub mod discovery;
 pub mod events;
 pub mod http;
+pub mod mcp;
 pub mod nats;
 pub mod providers;
 pub mod rate_limit;
 pub mod security;
 pub mod storage;
+pub mod telemetry;
+pub mod telemetry_nats;
 pub mod tokens;
