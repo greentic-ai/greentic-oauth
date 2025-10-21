@@ -85,21 +85,42 @@ fn start_generates_blueprint() {
 fn dump_discovery_samples() {
     let root = config_root_path();
 
-    let descriptor = mcp::describe(&root, "acme", "microsoft-graph", Some("ops"), Some("alice@example.com"))
-        .expect("describe");
+    let descriptor = mcp::describe(
+        &root,
+        "acme",
+        "microsoft-graph",
+        Some("ops"),
+        Some("alice@example.com"),
+    )
+    .expect("describe");
     println!("graph-descriptor:\n{}", descriptor);
 
-    let requirements = mcp::requirements(&root, "acme", "microsoft-graph", Some("ops"), Some("alice@example.com"))
-        .expect("requirements");
+    let requirements = mcp::requirements(
+        &root,
+        "acme",
+        "microsoft-graph",
+        Some("ops"),
+        Some("alice@example.com"),
+    )
+    .expect("requirements");
     println!("graph-requirements:\n{}", requirements);
 
-    let blueprint = mcp::start(&root, "acme", "microsoft-graph", "authorization_code", Some("ops"), Some("alice@example.com"))
-        .expect("blueprint");
+    let blueprint = mcp::start(
+        &root,
+        "acme",
+        "microsoft-graph",
+        "authorization_code",
+        Some("ops"),
+        Some("alice@example.com"),
+    )
+    .expect("blueprint");
     println!("graph-blueprint:\n{}", blueprint);
 
-    let slack_descriptor = mcp::describe(&root, "acme", "slack", None, None).expect("slack describe");
+    let slack_descriptor =
+        mcp::describe(&root, "acme", "slack", None, None).expect("slack describe");
     println!("slack-descriptor:\n{}", slack_descriptor);
 
-    let slack_requirements = mcp::requirements(&root, "acme", "slack", None, None).expect("slack requirements");
+    let slack_requirements =
+        mcp::requirements(&root, "acme", "slack", None, None).expect("slack requirements");
     println!("slack-requirements:\n{}", slack_requirements);
 }

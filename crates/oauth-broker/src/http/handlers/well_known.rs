@@ -1,10 +1,6 @@
 use std::{collections::BTreeSet, fs};
 
-use axum::{
-    body::Body,
-    extract::State,
-    http::Response,
-};
+use axum::{body::Body, extract::State, http::Response};
 use serde_json::{json, Value};
 
 use crate::{
@@ -13,31 +9,34 @@ use crate::{
     storage::secrets_manager::SecretsManager,
 };
 
-pub async fn document<S>(
-    State(ctx): State<SharedContext<S>>,
-) -> Result<Response<Body>, AppError>
+pub async fn document<S>(State(ctx): State<SharedContext<S>>) -> Result<Response<Body>, AppError>
 where
     S: SecretsManager + 'static,
 {
-    let api_base = std::env::var("OAUTH_DISCOVERY_API_BASE")
-        .unwrap_or_else(|_| "{api_base}".to_string());
+    let api_base =
+        std::env::var("OAUTH_DISCOVERY_API_BASE").unwrap_or_else(|_| "{api_base}".to_string());
     let base_trimmed = api_base.trim_end_matches('/');
-    let service_name = std::env::var("SERVICE_NAME")
-        .unwrap_or_else(|_| "greentic-oauth".to_string());
-    let owner = std::env::var("OAUTH_DISCOVERY_OWNER")
-        .unwrap_or_else(|_| "greentic".to_string());
+    let service_name =
+        std::env::var("SERVICE_NAME").unwrap_or_else(|_| "greentic-oauth".to_string());
+    let owner = std::env::var("OAUTH_DISCOVERY_OWNER").unwrap_or_else(|_| "greentic".to_string());
 
     let mut grant_types = BTreeSet::new();
     let mut auth_methods = BTreeSet::new();
     let providers_dir = ctx.config_root.join("providers");
     if providers_dir.exists() {
-        let entries = fs::read_dir(&providers_dir)
-            .map_err(|err| AppError::internal(err.to_string()))?;
+        let entries =
+            fs::read_dir(&providers_dir).map_err(|err| AppError::internal(err.to_string()))?;
         for entry in entries.flatten() {
-            if entry.path().extension().map(|ext| ext == "yaml").unwrap_or(false) {
+            if entry
+                .path()
+                .extension()
+                .map(|ext| ext == "yaml")
+                .unwrap_or(false)
+            {
                 if let Some(id) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    let descriptor = load_provider_descriptor(&*ctx.config_root, id, None, None, None)
-                        .map_err(|err| AppError::internal(err.to_string()))?;
+                    let descriptor =
+                        load_provider_descriptor(&*ctx.config_root, id, None, None, None)
+                            .map_err(|err| AppError::internal(err.to_string()))?;
                     for grant in descriptor.grant_types {
                         grant_types.insert(grant);
                     }

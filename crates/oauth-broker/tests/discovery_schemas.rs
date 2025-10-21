@@ -338,7 +338,9 @@ async fn well_known_reports_signing_metadata() {
     );
     assert_eq!(
         doc.get("providers_index"),
-        Some(&Value::String("{api_base}/oauth/discovery/providers".into()))
+        Some(&Value::String(
+            "{api_base}/oauth/discovery/providers".into()
+        ))
     );
     let capabilities = doc
         .get("capabilities")
@@ -378,10 +380,7 @@ async fn well_known_reports_signing_metadata() {
         doc.get("kid"),
         Some(&Value::String("test-discovery".into()))
     );
-    assert_eq!(
-        doc.get("metadata"),
-        Some(&json!({ "owner": "greentic" }))
-    );
+    assert_eq!(doc.get("metadata"), Some(&json!({ "owner": "greentic" })));
 }
 
 #[tokio::test]
@@ -402,7 +401,10 @@ async fn dump_http_discovery_samples() {
     .await
     .expect("descriptor");
     let (descriptor, _) = response_json(response).await;
-    println!("http-graph-descriptor:\n{}", serde_json::to_string_pretty(&descriptor).unwrap());
+    println!(
+        "http-graph-descriptor:\n{}",
+        serde_json::to_string_pretty(&descriptor).unwrap()
+    );
 
     let response = get_requirements::<EnvSecretsManager>(
         Path(ScopedProviderPath {
@@ -448,7 +450,10 @@ async fn dump_http_discovery_samples() {
             tenant: "acme".to_string(),
             provider_id: "slack".to_string(),
         }),
-        Query(ScopedQuery { team: None, user: None }),
+        Query(ScopedQuery {
+            team: None,
+            user: None,
+        }),
         State(ctx.clone()),
     )
     .await
@@ -464,7 +469,10 @@ async fn dump_http_discovery_samples() {
             tenant: "acme".to_string(),
             provider_id: "slack".to_string(),
         }),
-        Query(ScopedQuery { team: None, user: None }),
+        Query(ScopedQuery {
+            team: None,
+            user: None,
+        }),
         State(ctx),
     )
     .await
