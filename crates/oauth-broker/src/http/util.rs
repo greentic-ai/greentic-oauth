@@ -46,5 +46,5 @@ fn compute_etag(body: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(body);
     let hash = hasher.finalize();
-    format!("{:x}", hash)
+    format!("{hash:x}")
 }

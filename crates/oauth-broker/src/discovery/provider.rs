@@ -166,7 +166,7 @@ pub fn build_flow_blueprint(
                 example_payload: req
                     .event_examples
                     .as_ref()
-                    .and_then(|examples| examples.get(0))
+                    .and_then(|examples| examples.first())
                     .map(|payload| Value::String(payload.clone())),
             }])
         } else {
@@ -213,7 +213,7 @@ fn build_auth_code_path(
 ) -> GrantPath {
     let redirect_template = descriptor
         .redirect_uri_templates
-        .get(0)
+        .first()
         .cloned()
         .unwrap_or_else(|| "{api_base}/oauth/callback/{tenant}/{provider}".to_string());
     let resolved_redirect = redirect_template

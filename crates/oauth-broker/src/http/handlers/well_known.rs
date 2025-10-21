@@ -27,13 +27,9 @@ where
         let entries =
             fs::read_dir(&providers_dir).map_err(|err| AppError::internal(err.to_string()))?;
         for entry in entries.flatten() {
-            if entry
-                .path()
-                .extension()
-                .map(|ext| ext == "yaml")
-                .unwrap_or(false)
-            {
-                if let Some(id) = entry.path().file_stem().and_then(|s| s.to_str()) {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "yaml") {
+                if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
                     let descriptor =
                         load_provider_descriptor(&*ctx.config_root, id, None, None, None)
                             .map_err(|err| AppError::internal(err.to_string()))?;
@@ -62,14 +58,14 @@ where
                 "webhook-callbacks",
             ],
         },
-        "providers_index": format!("{}/oauth/discovery/providers", base_trimmed),
+        "providers_index": format!("{base_trimmed}/oauth/discovery/providers"),
         "metadata": {
             "owner": owner,
         },
     });
 
     if let Some(discovery) = ctx.security.discovery.as_ref() {
-        let jwks_uri = format!("{}/.well-known/jwks.json", base_trimmed);
+        let jwks_uri = format!("{base_trimmed}/.well-known/jwks.json");
         if let Value::Object(map) = &mut payload {
             map.insert("jwks_uri".into(), Value::String(jwks_uri));
             map.insert("kid".into(), Value::String(discovery.kid().to_string()));

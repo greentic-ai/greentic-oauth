@@ -297,7 +297,7 @@ impl Writer {
         let header_block = headers.encode();
         let header_len = header_block.len();
         let total_len = header_len + payload.len();
-        let command = format!("HPUB {} {} {}\r\n", subject, header_len, total_len);
+        let command = format!("HPUB {subject} {header_len} {total_len}\r\n");
         let mut guard = self.inner.lock().await;
         guard.write_all(command.as_bytes()).await?;
         guard.write_all(&header_block).await?;

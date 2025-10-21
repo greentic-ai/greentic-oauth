@@ -93,7 +93,7 @@ fn dump_discovery_samples() {
         Some("alice@example.com"),
     )
     .expect("describe");
-    println!("graph-descriptor:\n{}", descriptor);
+    println!("graph-descriptor:\n{descriptor}");
 
     let requirements = mcp::requirements(
         &root,
@@ -103,7 +103,7 @@ fn dump_discovery_samples() {
         Some("alice@example.com"),
     )
     .expect("requirements");
-    println!("graph-requirements:\n{}", requirements);
+    println!("graph-requirements:\n{requirements}");
 
     let blueprint = mcp::start(
         &root,
@@ -114,13 +114,13 @@ fn dump_discovery_samples() {
         Some("alice@example.com"),
     )
     .expect("blueprint");
-    println!("graph-blueprint:\n{}", blueprint);
+    println!("graph-blueprint:\n{blueprint}");
 
     let slack_descriptor =
         mcp::describe(&root, "acme", "slack", None, None).expect("slack describe");
-    println!("slack-descriptor:\n{}", slack_descriptor);
+    println!("slack-descriptor:\n{slack_descriptor}");
 
     let slack_requirements =
         mcp::requirements(&root, "acme", "slack", None, None).expect("slack requirements");
-    println!("slack-requirements:\n{}", slack_requirements);
+    println!("slack-requirements:\n{slack_requirements}");
 }

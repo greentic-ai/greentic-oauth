@@ -162,6 +162,7 @@ fn security_config() -> SecurityConfig {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_context(
     provider_registry: Arc<ProviderRegistry>,
     security: Arc<SecurityConfig>,

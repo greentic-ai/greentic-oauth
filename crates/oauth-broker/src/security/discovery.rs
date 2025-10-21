@@ -38,18 +38,18 @@ impl DiscoverySigner {
     }
 
     pub fn from_jwk_value(value: Value) -> Result<Self, SecurityError> {
-        let obj = value
-            .as_object()
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK must be an object"))?;
+        let obj = value.as_object().ok_or(SecurityError::InvalidKey(
+            "OAUTH_DISCOVERY_JWK must be an object",
+        ))?;
         let kid = obj
             .get("kid")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing kid"))?
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing kid"))?
             .to_string();
         let kty = obj
             .get("kty")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing kty"))?;
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing kty"))?;
 
         match kty {
             "OKP" => Self::build_ed25519(obj, kid),
@@ -102,7 +102,7 @@ impl DiscoverySigner {
         let crv = obj
             .get("crv")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing crv"))?;
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing crv"))?;
         if crv != "Ed25519" {
             return Err(SecurityError::InvalidKey("unsupported OKP curve"));
         }
@@ -110,7 +110,7 @@ impl DiscoverySigner {
         let secret = obj
             .get("d")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing d"))?;
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing d"))?;
         let secret_bytes = URL_SAFE_NO_PAD.decode(secret.as_bytes())?;
         if secret_bytes.len() != 32 {
             return Err(SecurityError::InvalidKey(
@@ -150,14 +150,14 @@ impl DiscoverySigner {
         let crv = obj
             .get("crv")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing crv"))?;
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing crv"))?;
         if crv != "P-256" {
             return Err(SecurityError::InvalidKey("unsupported EC curve"));
         }
         let secret = obj
             .get("d")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing d"))?;
+            .ok_or(SecurityError::InvalidKey("OAUTH_DISCOVERY_JWK missing d"))?;
         let secret_bytes = URL_SAFE_NO_PAD.decode(secret.as_bytes())?;
         let secret_key = P256SecretKey::from_slice(&secret_bytes)
             .map_err(|_| SecurityError::InvalidKey("invalid P-256 private key"))?;
@@ -166,10 +166,10 @@ impl DiscoverySigner {
         let encoded = verifying.to_encoded_point(false);
         let x = encoded
             .x()
-            .ok_or_else(|| SecurityError::InvalidKey("invalid P-256 public key"))?;
+            .ok_or(SecurityError::InvalidKey("invalid P-256 public key"))?;
         let y = encoded
             .y()
-            .ok_or_else(|| SecurityError::InvalidKey("invalid P-256 public key"))?;
+            .ok_or(SecurityError::InvalidKey("invalid P-256 public key"))?;
 
         let x_b64 = URL_SAFE_NO_PAD.encode(x);
         let y_b64 = URL_SAFE_NO_PAD.encode(y);
