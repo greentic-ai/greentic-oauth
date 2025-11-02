@@ -28,7 +28,8 @@
       "type": ["array", "null"],
       "items": { "$ref": "#/$defs/WebhookHint" }
     },
-    "expires_at": { "type": ["string", "null"] }
+    "expires_at": { "type": ["string", "null"] },
+    "auth_url_example": { "type": ["string", "null"] }
   },
   "$defs": {
     "Step": {

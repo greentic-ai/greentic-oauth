@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use oauth_broker::{
+use greentic_oauth_broker::{
     discovery::{
         build_config_requirements, build_flow_blueprint, load_provider_descriptor,
         ProviderDescriptor,
@@ -50,7 +50,7 @@ fn requirements_return_expected_payload() {
     let actual: Value = serde_json::from_str(&json).expect("json");
 
     let descriptor = descriptor(&root, tenant, provider, team, None);
-    let expected_requirements = build_config_requirements(&descriptor, tenant, team, None);
+    let expected_requirements = build_config_requirements(&descriptor, tenant, team, None, None);
     let expected = serde_json::to_value(expected_requirements).expect("value");
 
     assert_eq!(actual, expected);

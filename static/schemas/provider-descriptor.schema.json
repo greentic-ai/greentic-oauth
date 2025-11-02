@@ -39,7 +39,8 @@
     "notes": { "type": ["string", "null"] },
     "metadata": {
       "type": ["object", "array", "string", "number", "boolean", "null"]
-    }
+    },
+    "manifest": { "$ref": "#/$defs/ResolvedManifest" }
   },
   "$defs": {
     "WebhookReq": {
@@ -52,6 +53,86 @@
         "event_examples": {
           "type": ["array", "null"],
           "items": { "type": "string" }
+        }
+      }
+    },
+    "ResolvedManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "version",
+        "tenant_mode",
+        "scopes",
+        "grant_types",
+        "redirect_uris",
+        "secrets"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "version": { "type": "string" },
+        "tenant_mode": {
+          "type": "string",
+          "enum": ["common", "per-tenant", "per-domain"]
+        },
+        "discovery": { "type": ["string", "null"] },
+        "auth": { "type": ["string", "null"] },
+        "token": { "type": ["string", "null"] },
+        "userinfo": { "type": ["string", "null"] },
+        "jwks_uri": { "type": ["string", "null"] },
+        "scopes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "grant_types": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "redirect_uris": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "secrets": { "$ref": "#/$defs/ResolvedSecrets" },
+        "blueprints": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/ResolvedBlueprints" }
+          ]
+        }
+      }
+    },
+    "ResolvedSecrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["client_id_key", "client_secret_key"],
+      "properties": {
+        "client_id_key": { "type": "string" },
+        "client_secret_key": { "type": "string" },
+        "extra": {
+          "type": [
+            "object",
+            "array",
+            "string",
+            "number",
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "ResolvedBlueprints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "auth_url_template": { "type": ["string", "null"] },
+        "scope_presets": {
+          "type": ["object", "null"],
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
         }
       }
     }

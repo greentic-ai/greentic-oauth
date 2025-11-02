@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Greentic OAuth Provider Manifest",
+  "type": "object",
+  "required": [
+    "id",
+    "label",
+    "grant_types",
+    "scopes",
+    "redirect_uris",
+    "secrets"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string",
+      "default": "1"
+    },
+    "discovery": {
+      "type": "string"
+    },
+    "auth": {
+      "type": "string"
+    },
+    "token": {
+      "type": "string"
+    },
+    "userinfo": {
+      "type": "string"
+    },
+    "jwks_uri": {
+      "type": "string"
+    },
+    "tenant_mode": {
+      "type": "string",
+      "enum": [
+        "common",
+        "per-tenant",
+        "per-domain"
+      ],
+      "default": "common"
+    },
+    "scopes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "grant_types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "authorization_code",
+          "client_credentials",
+          "device_code",
+          "refresh_token"
+        ]
+      }
+    },
+    "redirect_uris": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": [
+        "client_id_key",
+        "client_secret_key"
+      ],
+      "properties": {
+        "client_id_key": {
+          "type": "string"
+        },
+        "client_secret_key": {
+          "type": "string"
+        },
+        "extra": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "blueprints": {
+      "type": "object",
+      "properties": {
+        "auth_url_template": {
+          "type": "string"
+        },
+        "scope_presets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "required": [
+            "discovery"
+          ]
+        }
+      },
+      "then": {
+        "required": [
+          "auth",
+          "token"
+        ]
+      }
+    }
+  ]
+}

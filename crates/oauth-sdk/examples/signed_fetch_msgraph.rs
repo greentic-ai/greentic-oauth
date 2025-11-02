@@ -1,8 +1,8 @@
 use std::{env, error::Error};
 
+use greentic_oauth_sdk::{Client, ClientConfig, SignedFetchRequest};
 use greentic_telemetry::init as telemetry_init;
 use greentic_telemetry::{set_context, CloudCtx, TelemetryInit};
-use oauth_sdk::{Client, ClientConfig, SignedFetchRequest};
 use reqwest::Method;
 
 #[tokio::main]

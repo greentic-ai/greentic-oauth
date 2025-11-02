@@ -5,7 +5,7 @@ test:
 	cargo test --workspace
 
 run:
-	cargo run -p oauth-broker
+	cargo run -p greentic-oauth-broker
 
 fmt:
 	cargo fmt --all

@@ -15,10 +15,11 @@ use axum::{
     Router,
 };
 use base64::Engine as _;
-use oauth_broker::{
+use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, PublishError, SharedPublisher},
     http::{self, AppContext, SharedContext},
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{
@@ -30,7 +31,7 @@ use oauth_broker::{
     },
     tokens::{revoke_token, StoredToken},
 };
-use oauth_core::{
+use greentic_oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
     OwnerKind, TenantCtx, TokenHandleClaims, TokenSet,
 };
@@ -358,6 +359,8 @@ fn build_context(
     let publisher: SharedPublisher = publisher_impl.clone();
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog =
+        Arc::new(ProviderCatalog::load(&config_root.join("providers")).expect("catalog"));
 
     let context = Arc::new(AppContext {
         providers,
@@ -368,6 +371,7 @@ fn build_context(
         publisher,
         rate_limiter,
         config_root,
+        provider_catalog,
     });
 
     (context, refresh_counter, publisher_impl)
@@ -412,7 +416,7 @@ async fn spawn_mock_service(
 }
 
 fn security_config() -> SecurityConfig {
-    use oauth_broker::security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService};
+    use greentic_oauth_broker::security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService};
 
     let jws = JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
         .expect("jws");
@@ -451,8 +455,8 @@ impl Provider for TestProvider {
 
     fn build_authorize_redirect(
         &self,
-        _request: &oauth_core::OAuthFlowRequest,
-    ) -> ProviderResult<oauth_core::OAuthFlowResult> {
+        _request: &greentic_oauth_core::OAuthFlowRequest,
+    ) -> ProviderResult<greentic_oauth_core::OAuthFlowResult> {
         Err(ProviderError::new(
             ProviderErrorKind::Unsupported,
             Some("not used".to_string()),

@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use oauth_core::types::{OwnerKind, TenantCtx, TokenHandleClaims};
+use greentic_oauth_core::types::{OwnerKind, TenantCtx, TokenHandleClaims};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 

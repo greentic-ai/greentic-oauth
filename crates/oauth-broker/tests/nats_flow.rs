@@ -5,7 +5,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use oauth_broker::{
+use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
     http::{
@@ -14,6 +14,7 @@ use oauth_broker::{
         AppContext, SharedContext,
     },
     nats::{self, NatsEventPublisher, NatsOptions},
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService, SecurityConfig},
     storage::{
@@ -21,7 +22,7 @@ use oauth_broker::{
     },
     telemetry_nats::NatsHeaders,
 };
-use oauth_core::{
+use greentic_oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
     types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TokenHandleClaims, TokenSet},
 };
@@ -133,6 +134,7 @@ fn build_context(
     publisher: SharedPublisher,
     rate_limiter: Arc<RateLimiter>,
     config_root: Arc<PathBuf>,
+    provider_catalog: Arc<ProviderCatalog>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: registry,
@@ -143,6 +145,7 @@ fn build_context(
         publisher,
         rate_limiter,
         config_root,
+        provider_catalog,
     })
 }
 
@@ -210,6 +213,7 @@ async fn nats_request_and_publish_flow() {
     let publisher: SharedPublisher = Arc::new(NatsEventPublisher::new(writer.clone()));
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
         providers,
@@ -220,6 +224,7 @@ async fn nats_request_and_publish_flow() {
         publisher.clone(),
         rate_limiter,
         config_root.clone(),
+        provider_catalog,
     );
 
     let request_handle = nats::spawn_request_listener(writer.clone(), reader, context.clone())

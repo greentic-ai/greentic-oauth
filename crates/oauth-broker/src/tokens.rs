@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use oauth_core::{provider::Provider, TokenHandleClaims, TokenSet};
+use greentic_oauth_core::{provider::Provider, TokenHandleClaims, TokenSet};
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue},
     Client, Method, Response,
@@ -90,8 +90,8 @@ where
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {
-        oauth_core::types::OwnerKind::User { .. } => "user",
-        oauth_core::types::OwnerKind::Service { .. } => "service",
+        greentic_oauth_core::types::OwnerKind::User { .. } => "user",
+        greentic_oauth_core::types::OwnerKind::Service { .. } => "service",
     };
 
     let provider = ctx.providers.get(&claims.provider).ok_or_else(|| {
@@ -284,8 +284,8 @@ where
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {
-        oauth_core::types::OwnerKind::User { .. } => "user",
-        oauth_core::types::OwnerKind::Service { .. } => "service",
+        greentic_oauth_core::types::OwnerKind::User { .. } => "user",
+        greentic_oauth_core::types::OwnerKind::Service { .. } => "service",
     };
 
     let provider = match ctx.providers.get(&claims.provider) {
@@ -481,8 +481,8 @@ where
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {
-        oauth_core::types::OwnerKind::User { .. } => "user",
-        oauth_core::types::OwnerKind::Service { .. } => "service",
+        greentic_oauth_core::types::OwnerKind::User { .. } => "user",
+        greentic_oauth_core::types::OwnerKind::Service { .. } => "service",
     };
     let method_string = opts.method.to_string();
     let url_string = opts.url.clone();

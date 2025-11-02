@@ -1,11 +1,14 @@
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
 };
 
 use super::overlay::ProviderOverlay;
+use crate::providers::manifest::{ResolvedProviderManifest, ResolvedSecrets};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use serde_yaml_bw as serde_yaml;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -65,6 +68,10 @@ pub struct ConfigRequirements {
     pub team: Option<String>,
     pub user: Option<String>,
     pub grant_paths: Vec<GrantPath>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secrets: Option<ResolvedSecrets>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_presets: Option<HashMap<String, Vec<String>>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -113,6 +120,8 @@ pub struct FlowBlueprint {
     pub next_actions: Vec<ActionLink>,
     pub webhooks: Option<Vec<WebhookHint>>,
     pub expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_url_example: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,6 +138,7 @@ pub fn build_config_requirements(
     tenant: &str,
     team: Option<&str>,
     user: Option<&str>,
+    manifest: Option<&ResolvedProviderManifest>,
 ) -> ConfigRequirements {
     let grant_paths = descriptor
         .grant_types
@@ -142,6 +152,10 @@ pub fn build_config_requirements(
         team: team.map(|s| s.to_string()),
         user: user.map(|s| s.to_string()),
         grant_paths,
+        secrets: manifest.map(|resolved| resolved.secrets.clone()),
+        scope_presets: manifest
+            .and_then(|resolved| resolved.blueprints.as_ref())
+            .and_then(|blueprints| blueprints.scope_presets.clone()),
     }
 }
 
@@ -182,6 +196,7 @@ pub fn build_flow_blueprint(
         next_actions: grant_path.action_links.clone(),
         webhooks,
         expires_at: None,
+        auth_url_example: None,
     }
 }
 

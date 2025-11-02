@@ -1,6 +1,6 @@
 [package]
-name = "oauth-core"
-version = "0.1.0"
+name = "greentic-oauth-core"
+version.workspace = true
 edition = "2021"
 
 [features]
@@ -8,8 +8,8 @@ default = []
 schemas = ["schemars"]
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-schemars = { version = "0.8", optional = true }
+serde = { workspace = true }
+schemars = { workspace = true, optional = true }
 
 [dev-dependencies]
-serde_json = "1"
+serde_json = { workspace = true }

@@ -33,7 +33,7 @@ pub fn requirements(
     user: Option<&str>,
 ) -> Result<String> {
     let descriptor = load_provider_descriptor(config_root, provider, Some(tenant), team, user)?;
-    let requirements = build_config_requirements(&descriptor, tenant, team, user);
+    let requirements = build_config_requirements(&descriptor, tenant, team, user, None);
     Ok(serde_json::to_string(&requirements)?)
 }
 

@@ -12,7 +12,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use oauth_broker::{
+use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, PublishError, SharedPublisher},
     http::{
@@ -24,13 +24,14 @@ use oauth_broker::{
         state::FlowState,
         AppContext, SharedContext,
     },
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::{csrf::CsrfKey, jwe::JweVault, jws::JwsService, SecurityConfig},
     storage::{
         env::EnvSecretsManager, index::ConnectionKey, secrets_manager::SecretsManager, StorageIndex,
     },
 };
-use oauth_core::{
+use greentic_oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
     types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TokenHandleClaims, TokenSet},
 };
@@ -172,6 +173,7 @@ fn build_context(
     publisher: SharedPublisher,
     rate_limiter: Arc<RateLimiter>,
     config_root: Arc<PathBuf>,
+    provider_catalog: Arc<ProviderCatalog>,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: provider_registry,
@@ -182,6 +184,7 @@ fn build_context(
         publisher,
         rate_limiter,
         config_root,
+        provider_catalog,
     })
 }
 
@@ -203,6 +206,7 @@ async fn start_to_callback_happy_path() {
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
         provider_registry,
@@ -213,6 +217,7 @@ async fn start_to_callback_happy_path() {
         publisher,
         rate_limiter.clone(),
         config_root.clone(),
+        provider_catalog.clone(),
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -384,6 +389,7 @@ async fn callback_state_validation_failure() {
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
         provider_registry,
@@ -394,6 +400,7 @@ async fn callback_state_validation_failure() {
         publisher,
         rate_limiter,
         config_root.clone(),
+        provider_catalog,
     );
 
     let response = callback::complete::<EnvSecretsManager>(
@@ -434,6 +441,7 @@ async fn start_rate_limit_enforced() {
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(1, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
         provider_registry,
@@ -444,6 +452,7 @@ async fn start_rate_limit_enforced() {
         publisher,
         rate_limiter,
         config_root.clone(),
+        provider_catalog,
     );
 
     initiate::start::<EnvSecretsManager>(
@@ -522,6 +531,7 @@ async fn callback_rate_limit_enforced() {
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(2, Duration::from_secs(60)));
     let config_root = Arc::new(PathBuf::from("./configs"));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
         provider_registry,
@@ -532,6 +542,7 @@ async fn callback_rate_limit_enforced() {
         publisher,
         rate_limiter.clone(),
         config_root.clone(),
+        provider_catalog.clone(),
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(

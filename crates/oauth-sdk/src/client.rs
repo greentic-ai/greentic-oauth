@@ -3,7 +3,7 @@ use std::{fmt, str::FromStr, time::Duration};
 use async_nats::Client as NatsClient;
 use base64::Engine;
 use futures_util::StreamExt;
-use oauth_core::TokenHandleClaims;
+use greentic_oauth_core::TokenHandleClaims;
 use reqwest::{Client as HttpClient, Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::time;

@@ -1,4 +1,4 @@
-use rand::{distributions::Alphanumeric, Rng};
+use rand::distr::{Alphanumeric, SampleString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -54,11 +54,8 @@ impl FlowState {
     }
 
     fn generate_nonce() -> String {
-        rand::thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect()
+        let mut rng = rand::rng();
+        Alphanumeric.sample_string(&mut rng, 32)
     }
 
     pub fn secret_path(&self) -> Result<SecretPath, StorageError> {

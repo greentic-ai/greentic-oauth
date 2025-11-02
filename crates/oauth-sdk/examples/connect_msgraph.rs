@@ -1,8 +1,8 @@
 use std::{env, error::Error, str::FromStr};
 
+use greentic_oauth_sdk::{Client, ClientConfig, InitiateAuthRequest, OwnerKind, Visibility};
 use greentic_telemetry::init as telemetry_init;
 use greentic_telemetry::{set_context, CloudCtx, TelemetryInit};
-use oauth_sdk::{Client, ClientConfig, InitiateAuthRequest, OwnerKind, Visibility};
 use uuid::Uuid;
 
 #[tokio::main]

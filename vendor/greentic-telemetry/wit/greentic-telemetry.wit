@@ -1,0 +1,21 @@
+package greentic:telemetry
+
+interface logging {
+  enum level { trace, debug, info, warn, error }
+
+  record fields {
+    entries: list<tuple<string, string>>
+  }
+
+  log: func(lvl: level, message: string, fields: fields)
+  span-start: func(name: string, fields: fields) -> u64
+  span-end: func(id: u64)
+}
+
+world guest-telemetry {
+  import logging
+}
+
+world host-telemetry {
+  export logging
+}

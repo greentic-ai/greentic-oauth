@@ -4,12 +4,13 @@
 )]
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
+use rand::TryRngCore;
 
 use aes_gcm::aead::generic_array::{typenum::U12, typenum::U16, GenericArray};
 use aes_gcm::aead::{AeadInPlace, KeyInit};
 use aes_gcm::Aes256Gcm;
-use oauth_core::TokenSet;
+use greentic_oauth_core::TokenSet;
 
 use super::SecurityError;
 
@@ -37,7 +38,9 @@ impl JweVault {
     /// Encrypt a token set into a compact JWE representation.
     pub fn encrypt(&self, token_set: &TokenSet) -> Result<String, SecurityError> {
         let mut nonce_bytes = [0u8; 12];
-        OsRng.fill_bytes(&mut nonce_bytes);
+        let mut rng = OsRng;
+        rng.try_fill_bytes(&mut nonce_bytes)
+            .expect("os entropy source unavailable");
         let nonce: GenericArray<u8, U12> = GenericArray::clone_from_slice(&nonce_bytes);
 
         let mut buffer = serde_json::to_vec(token_set)?;

@@ -345,32 +345,25 @@ pub async fn connect(
     let url = Url::parse(&options.url)?;
     let host = url
         .host_str()
-        .ok_or_else(|| NatsError::Protocol("missing host".into()))?;
+        .ok_or_else(|| NatsError::Protocol("missing host".into()))?
+        .to_string();
     let port = url
         .port_or_known_default()
         .ok_or_else(|| NatsError::Protocol("missing port".into()))?;
-    let addr = format!("{host}:{port}");
+    let addr = format!("{}:{}", host, port);
 
     let stream = TcpStream::connect(addr).await?;
 
     let requires_tls = url.scheme() == "tls" || options.tls_domain.is_some();
     let stream: DynStream = if requires_tls {
-        let mut root_store = rustls::RootCertStore::empty();
-        let anchors = TLS_SERVER_ROOTS.iter().map(|anchor| {
-            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                anchor.subject,
-                anchor.spki,
-                anchor.name_constraints,
-            )
-        });
-        root_store.add_trust_anchors(anchors);
+        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+        let root_store = rustls::RootCertStore::from_iter(TLS_SERVER_ROOTS.iter().cloned());
         let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
             .with_root_certificates(root_store)
             .with_no_client_auth();
         let connector = TlsConnector::from(Arc::new(config));
-        let domain = options.tls_domain.as_deref().unwrap_or(host);
-        let server_name = rustls::ServerName::try_from(domain)
+        let domain = options.tls_domain.clone().unwrap_or_else(|| host.clone());
+        let server_name = rustls::pki_types::ServerName::try_from(domain.clone())
             .map_err(|_| NatsError::Protocol("invalid tls domain".into()))?;
         let tls_stream = connector.connect(server_name, stream).await?;
         Box::pin(tls_stream)

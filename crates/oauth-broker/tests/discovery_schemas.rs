@@ -9,9 +9,7 @@ use axum::{
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use ed25519_dalek::SigningKey as Ed25519SigningKey;
-use http_body_util::BodyExt;
-use jsonschema::JSONSchema;
-use oauth_broker::{
+use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     discovery::{load_provider_descriptor, ProviderDescriptor},
     events::{NoopPublisher, SharedPublisher},
@@ -23,12 +21,15 @@ use oauth_broker::{
         handlers::well_known,
         AppContext, SharedContext,
     },
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::{
         csrf::CsrfKey, discovery::DiscoverySigner, jwe::JweVault, jws::JwsService, SecurityConfig,
     },
     storage::{env::EnvSecretsManager, StorageIndex},
 };
+use http_body_util::BodyExt;
+use jsonschema::{validator_for, Validator};
 use serde_json::{json, Value};
 use tempfile::tempdir;
 
@@ -48,17 +49,18 @@ fn config_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
 }
 
-fn compile(schema_str: &str) -> JSONSchema {
+fn compile(schema_str: &str) -> Validator {
     let schema_json: Value = serde_json::from_str(schema_str).expect("schema json");
-    JSONSchema::compile(&schema_json).expect("valid schema")
+    validator_for(&schema_json).expect("valid schema")
 }
 
-fn validate(schema: &JSONSchema, data: &Value) {
-    if let Err(errors) = schema.validate(data) {
-        let formatted = errors
-            .map(|err| format!("{err}"))
-            .collect::<Vec<_>>()
-            .join("\n");
+fn validate(schema: &Validator, data: &Value) {
+    let errors: Vec<_> = schema
+        .iter_errors(data)
+        .map(|err| format!("{err}"))
+        .collect();
+    if !errors.is_empty() {
+        let formatted = errors.join("\n");
         panic!("schema validation failed:\n{formatted}\nDocument: {data}");
     }
 }
@@ -103,7 +105,10 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
     let redirect_guard = Arc::new(RedirectGuard::from_list(vec![]).expect("redirect guard"));
     let publisher: SharedPublisher = Arc::new(NoopPublisher);
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
-    let config_root = Arc::new(config_root_path());
+    let config_root_path = config_root_path();
+    let provider_catalog =
+        Arc::new(ProviderCatalog::load(&config_root_path.join("providers")).expect("catalog"));
+    let config_root = Arc::new(config_root_path);
 
     Arc::new(AppContext {
         providers,
@@ -114,6 +119,7 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         publisher,
         rate_limiter,
         config_root,
+        provider_catalog,
     })
 }
 
@@ -231,6 +237,9 @@ async fn blueprint_matches_schema() {
             grant_type: "authorization_code".to_string(),
             team: Some("ops".to_string()),
             user: Some("alice@example.com".to_string()),
+            redirect_uri: None,
+            scopes: None,
+            state: None,
         }),
     )
     .await
@@ -435,6 +444,9 @@ async fn dump_http_discovery_samples() {
             grant_type: "authorization_code".to_string(),
             team: Some("ops".to_string()),
             user: Some("alice@example.com".to_string()),
+            redirect_uri: None,
+            scopes: None,
+            state: None,
         }),
     )
     .await

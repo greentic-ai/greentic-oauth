@@ -1,9 +1,9 @@
-use oauth_core::{
+use greentic_oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
     types::{OAuthFlowRequest, OAuthFlowResult, TokenHandleClaims, TokenSet},
 };
 use serde::Deserialize;
-use ureq::{Agent, Error as UreqError};
+use ureq::Agent;
 use url::Url;
 
 use crate::security::pkce::PkcePair;
@@ -41,8 +41,13 @@ impl GenericOidcProvider {
             ));
         }
 
+        let agent: Agent = Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into();
+
         Ok(Self {
-            agent: Agent::new(),
+            agent,
             client_id,
             client_secret,
             auth_url,
@@ -98,29 +103,29 @@ impl GenericOidcProvider {
     }
 
     fn execute_token_request(&self, params: &[(&str, &str)]) -> ProviderResult<TokenSet> {
-        let response = match self
+        let mut response = self
             .agent
             .post(&self.token_url)
-            .set("Content-Type", "application/x-www-form-urlencoded")
-            .send_form(params)
-        {
-            Ok(resp) => resp,
-            Err(UreqError::Status(status, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                return Err(ProviderError::new(
-                    ProviderErrorKind::Authorization,
-                    format!("token endpoint returned {status}: {body}"),
-                ));
-            }
-            Err(UreqError::Transport(err)) => {
-                return Err(ProviderError::new(
-                    ProviderErrorKind::Transport,
-                    err.to_string(),
-                ));
-            }
-        };
+            .send_form(params.iter().copied())
+            .map_err(|err| ProviderError::new(ProviderErrorKind::Transport, err.to_string()))?;
 
-        let payload: TokenEndpointResponse = response.into_json().map_err(|err| {
+        let status = response.status();
+
+        if !status.is_success() {
+            let status_code = status.as_u16();
+            let reason = status.canonical_reason().unwrap_or("token endpoint error");
+            let body = response
+                .body_mut()
+                .read_to_string()
+                .unwrap_or_else(|_| String::new());
+
+            return Err(ProviderError::new(
+                ProviderErrorKind::Authorization,
+                format!("token endpoint returned {status_code} {reason}: {body}"),
+            ));
+        }
+
+        let payload: TokenEndpointResponse = response.body_mut().read_json().map_err(|err| {
             ProviderError::new(ProviderErrorKind::InvalidResponse, err.to_string())
         })?;
 
@@ -239,15 +244,87 @@ impl From<TokenEndpointResponse> for TokenSet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oauth_core::types::{OwnerKind, TenantCtx};
-    use serde_json::json;
-    use std::collections::HashMap;
-    use tokio::runtime::Runtime;
-    use ureq::Agent;
-    use wiremock::{
-        matchers::{body_string_contains, method, path},
-        Mock, MockServer, ResponseTemplate,
+    use axum::{
+        body::Bytes, extract::State, http::StatusCode, response::IntoResponse, routing::post, Json,
+        Router,
     };
+    use greentic_oauth_core::types::{OwnerKind, TenantCtx};
+    use serde_json::json;
+    use std::{
+        collections::HashMap,
+        net::SocketAddr,
+        sync::{Arc, Mutex},
+    };
+    use tokio::{runtime::Runtime, sync::oneshot};
+    use ureq::Agent;
+
+    struct StubServer {
+        base_url: String,
+        requests: Arc<Mutex<Vec<String>>>,
+        shutdown: Option<oneshot::Sender<()>>,
+    }
+
+    #[derive(Clone)]
+    struct AppState {
+        requests: Arc<Mutex<Vec<String>>>,
+        response: Arc<serde_json::Value>,
+    }
+
+    async fn token_handler(State(state): State<AppState>, body: Bytes) -> impl IntoResponse {
+        let body_str = String::from_utf8(body.to_vec()).expect("request body utf8");
+        state.requests.lock().expect("requests lock").push(body_str);
+        (StatusCode::OK, Json((*state.response).clone()))
+    }
+
+    impl StubServer {
+        async fn start(path: &'static str, response_body: serde_json::Value) -> Self {
+            let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+                .await
+                .expect("bind stub listener");
+            let addr = listener.local_addr().expect("listener addr");
+            let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let app_state = AppState {
+                requests: Arc::clone(&requests),
+                response: Arc::new(response_body),
+            };
+
+            let app = Router::new()
+                .route(path, post(token_handler))
+                .with_state(app_state);
+
+            let server = axum::serve(listener, app.into_make_service());
+            tokio::spawn(async move {
+                let _ = server
+                    .with_graceful_shutdown(async {
+                        let _ = shutdown_rx.await;
+                    })
+                    .await;
+            });
+
+            Self {
+                base_url: format!("http://{}", addr),
+                requests,
+                shutdown: Some(shutdown_tx),
+            }
+        }
+
+        fn base_url(&self) -> &str {
+            &self.base_url
+        }
+
+        fn take_requests(&self) -> Vec<String> {
+            self.requests.lock().expect("requests lock").clone()
+        }
+    }
+
+    impl Drop for StubServer {
+        fn drop(&mut self) {
+            if let Some(tx) = self.shutdown.take() {
+                let _ = tx.send(());
+            }
+        }
+    }
 
     fn sample_request() -> OAuthFlowRequest {
         OAuthFlowRequest {
@@ -285,6 +362,13 @@ mod tests {
         }
     }
 
+    fn test_agent() -> Agent {
+        Agent::config_builder()
+            .http_status_as_error(false)
+            .build()
+            .into()
+    }
+
     #[test]
     fn authorize_redirect_includes_expected_parameters() {
         let provider = GenericOidcProvider::new(
@@ -316,33 +400,28 @@ mod tests {
         assert_eq!(params.get("state"), Some(&"state456".to_string()));
     }
 
-    #[cfg_attr(not(feature = "wiremock_tests"), ignore)]
     #[test]
     fn exchange_code_hits_token_endpoint() {
         let rt = Runtime::new().expect("runtime");
         rt.block_on(async {
-            let server = MockServer::start().await;
-
-            Mock::given(method("POST"))
-                .and(path("/oauth2/v1/token"))
-                .and(body_string_contains("client_id=client"))
-                .and(body_string_contains("grant_type=authorization_code"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            let server = StubServer::start(
+                "/oauth2/v1/token",
+                json!({
                     "access_token": "oidc-token",
                     "expires_in": 1200,
                     "refresh_token": "oidc-refresh",
                     "scope": "openid profile",
                     "token_type": "Bearer"
-                })))
-                .mount(&server)
-                .await;
+                }),
+            )
+            .await;
 
-            let token_url = format!("{}/oauth2/v1/token", server.uri());
-            let auth_url = format!("{}/oauth2/v1/authorize", server.uri());
+            let token_url = format!("{}/oauth2/v1/token", server.base_url());
+            let auth_url = format!("{}/oauth2/v1/authorize", server.base_url());
 
             let token_set = tokio::task::spawn_blocking(move || {
                 let provider = GenericOidcProvider {
-                    agent: Agent::new(),
+                    agent: test_agent(),
                     client_id: "client".into(),
                     client_secret: "secret".into(),
                     auth_url,
@@ -362,35 +441,39 @@ mod tests {
                 token_set.scopes,
                 vec!["openid".to_string(), "profile".to_string()]
             );
+
+            let requests = server.take_requests();
+            assert!(
+                requests
+                    .iter()
+                    .any(|body| body.contains("grant_type=authorization_code")),
+                "expected authorization_code grant request"
+            );
         });
     }
 
-    #[cfg_attr(not(feature = "wiremock_tests"), ignore)]
     #[test]
     fn refresh_hits_token_endpoint() {
         let rt = Runtime::new().expect("runtime");
         rt.block_on(async {
-            let server = MockServer::start().await;
-
-            Mock::given(method("POST"))
-                .and(path("/oauth2/v1/token"))
-                .and(body_string_contains("grant_type=refresh_token"))
-                .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            let server = StubServer::start(
+                "/oauth2/v1/token",
+                json!({
                     "access_token": "oidc-token",
                     "expires_in": 900,
                     "refresh_token": "oidc-refresh",
                     "scope": "openid profile",
                     "token_type": "Bearer"
-                })))
-                .mount(&server)
-                .await;
+                }),
+            )
+            .await;
 
-            let token_url = format!("{}/oauth2/v1/token", server.uri());
-            let auth_url = format!("{}/oauth2/v1/authorize", server.uri());
+            let token_url = format!("{}/oauth2/v1/token", server.base_url());
+            let auth_url = format!("{}/oauth2/v1/authorize", server.base_url());
 
             let token_set = tokio::task::spawn_blocking(move || {
                 let provider = GenericOidcProvider {
-                    agent: Agent::new(),
+                    agent: test_agent(),
                     client_id: "client".into(),
                     client_secret: "secret".into(),
                     auth_url,
@@ -405,6 +488,14 @@ mod tests {
             .expect("token");
 
             assert_eq!(token_set.access_token, "oidc-token");
+
+            let requests = server.take_requests();
+            assert!(
+                requests
+                    .iter()
+                    .any(|body| body.contains("grant_type=refresh_token")),
+                "expected refresh_token grant request"
+            );
         });
     }
 }

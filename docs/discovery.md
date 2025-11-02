@@ -23,7 +23,7 @@ export SLACK_PROVIDER="slack"
 export OAUTH_DISCOVERY_API_BASE="$API_BASE"
 ```
 
-Run the broker with the environment variable above (e.g. `OAUTH_DISCOVERY_API_BASE=$API_BASE cargo run -p oauth-broker`).
+Run the broker with the environment variable above (e.g. `OAUTH_DISCOVERY_API_BASE=$API_BASE cargo run -p greentic-oauth-broker`).
 
 ## Endpoints at a Glance
 
@@ -538,7 +538,7 @@ The MCP tool bindings map directly to the discovery surface:
 WASM guests can use the WIT interface added in PR-SD6:
 
 ```rust
-use oauth_sdk::wit::{BrokerHost, discovery};
+use greentic_oauth_sdk::wit::{BrokerHost, discovery};
 
 let mut host = BrokerHost { client };
 let providers = discovery::list_providers(&mut host).await?;
@@ -561,7 +561,7 @@ For convenience, the repository keeps copy-paste friendly fixtures under `static
 - `static/examples/slack.requirements.json`
 - `static/examples/microsoft-graph.blueprint.json`
 
-These fixtures are validated by `cargo test -p oauth-broker discovery_schemas` to guarantee they track the live discovery responses.
+These fixtures are validated by `cargo test -p greentic-oauth-broker discovery_schemas` to guarantee they track the live discovery responses.
 
 ## Next Steps
 

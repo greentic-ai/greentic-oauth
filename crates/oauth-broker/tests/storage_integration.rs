@@ -1,8 +1,8 @@
-use oauth_broker::storage::{
+use greentic_oauth_broker::storage::{
     Connection, ConnectionKey, EnvSecretsManager, SecretPath, SecretsManager, StorageIndex,
     Visibility,
 };
-use oauth_core::{OwnerKind, TokenSet};
+use greentic_oauth_core::{OwnerKind, TokenSet};
 use tempfile::tempdir;
 
 #[test]

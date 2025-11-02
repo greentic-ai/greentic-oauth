@@ -12,7 +12,9 @@
     "grant_paths": {
       "type": "array",
       "items": {"$ref": "#/$defs/GrantPath"}
-    }
+    },
+    "secrets": {"$ref": "#/$defs/ResolvedSecrets"},
+    "scope_presets": {"$ref": "#/$defs/ScopePresets"}
   },
   "$defs": {
     "GrantPath": {
@@ -79,6 +81,44 @@
         "accepts": {"type": ["string", "null"]},
         "returns": {"type": ["string", "null"]}
       }
+    },
+    "ResolvedSecrets": {
+      "type": ["object", "null"],
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["client_id_key", "client_secret_key"],
+          "properties": {
+            "client_id_key": {"type": "string"},
+            "client_secret_key": {"type": "string"},
+            "extra": {
+              "type": [
+                "object",
+                "array",
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "ScopePresets": {
+      "type": ["object", "null"],
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      ]
     }
   }
 }

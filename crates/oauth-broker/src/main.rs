@@ -2,16 +2,17 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use axum::Router;
-use greentic_telemetry::prelude::*;
-use greentic_telemetry::{init as telemetry_init, set_context, CloudCtx, TelemetryInit};
-use oauth_broker::{
+use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
     http, nats,
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{env::EnvSecretsManager, StorageIndex},
 };
+use greentic_telemetry::prelude::*;
+use greentic_telemetry::{init as telemetry_init, set_context, CloudCtx, TelemetryInit};
 use tokio::signal;
 
 #[tokio::main]
@@ -41,6 +42,7 @@ async fn run() -> Result<()> {
     let config_root = Arc::new(PathBuf::from(
         std::env::var("PROVIDER_CONFIG_ROOT").unwrap_or_else(|_| "./configs".into()),
     ));
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers"))?);
 
     let nats_options = nats::NatsOptions::from_env().ok();
 
@@ -85,6 +87,7 @@ async fn run() -> Result<()> {
         publisher,
         rate_limiter,
         config_root: config_root.clone(),
+        provider_catalog,
     };
     let shared_context = Arc::new(context);
 

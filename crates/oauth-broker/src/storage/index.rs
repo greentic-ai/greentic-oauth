@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr, sync::RwLock};
 
 use serde::{Deserialize, Serialize};
 
-use oauth_core::OwnerKind;
+use greentic_oauth_core::OwnerKind;
 
 use super::models::{Connection, Visibility};
 

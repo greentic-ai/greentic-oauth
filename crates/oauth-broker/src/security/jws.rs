@@ -1,7 +1,7 @@
 use base64::engine::general_purpose::{STANDARD as BASE64_STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use oauth_core::TokenHandleClaims;
+use greentic_oauth_core::TokenHandleClaims;
 use std::convert::TryInto;
 
 use super::SecurityError;
@@ -87,7 +87,7 @@ impl JwsService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oauth_core::{OwnerKind, TenantCtx};
+    use greentic_oauth_core::{OwnerKind, TenantCtx};
 
     fn sample_signer() -> JwsService {
         let secret = BASE64_STANDARD.encode([1u8; 32]).to_string();

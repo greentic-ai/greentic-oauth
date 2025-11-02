@@ -88,15 +88,21 @@ impl From<PublishError> for AppError {
     }
 }
 
-impl From<oauth_core::provider::ProviderError> for AppError {
-    fn from(value: oauth_core::provider::ProviderError) -> Self {
+impl From<greentic_oauth_core::provider::ProviderError> for AppError {
+    fn from(value: greentic_oauth_core::provider::ProviderError) -> Self {
         let status = match value.kind() {
-            oauth_core::provider::ProviderErrorKind::Configuration => StatusCode::BAD_REQUEST,
-            oauth_core::provider::ProviderErrorKind::Authorization => StatusCode::UNAUTHORIZED,
-            oauth_core::provider::ProviderErrorKind::Transport
-            | oauth_core::provider::ProviderErrorKind::InvalidResponse
-            | oauth_core::provider::ProviderErrorKind::Other
-            | oauth_core::provider::ProviderErrorKind::Unsupported => StatusCode::BAD_GATEWAY,
+            greentic_oauth_core::provider::ProviderErrorKind::Configuration => {
+                StatusCode::BAD_REQUEST
+            }
+            greentic_oauth_core::provider::ProviderErrorKind::Authorization => {
+                StatusCode::UNAUTHORIZED
+            }
+            greentic_oauth_core::provider::ProviderErrorKind::Transport
+            | greentic_oauth_core::provider::ProviderErrorKind::InvalidResponse
+            | greentic_oauth_core::provider::ProviderErrorKind::Other
+            | greentic_oauth_core::provider::ProviderErrorKind::Unsupported => {
+                StatusCode::BAD_GATEWAY
+            }
         };
         AppError::new(status, value.to_string())
     }

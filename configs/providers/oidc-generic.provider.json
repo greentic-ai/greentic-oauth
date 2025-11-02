@@ -1,0 +1,27 @@
+{
+  "id": "oidc-generic",
+  "label": "Generic OIDC",
+  "version": "1",
+  "tenant_mode": "common",
+  "discovery": "https://accounts.google.com/.well-known/openid-configuration",
+  "scopes": [
+    "openid",
+    "email",
+    "profile",
+    "offline_access"
+  ],
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "redirect_uris": [
+    "https://localhost:8080/callback"
+  ],
+  "secrets": {
+    "client_id_key": "tenants/{tenant}/oauth/oidc/client_id",
+    "client_secret_key": "tenants/{tenant}/oauth/oidc/client_secret"
+  },
+  "blueprints": {
+    "auth_url_template": "{authorization_endpoint}?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&scope={scopes}&state={state}"
+  }
+}

@@ -26,6 +26,7 @@ use tracing::Level;
 use crate::{
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
+    providers::manifest::ProviderCatalog,
     rate_limit::RateLimiter,
     security::SecurityConfig,
     storage::{secrets_manager::SecretsManager, StorageIndex},
@@ -44,6 +45,7 @@ where
     pub publisher: SharedPublisher,
     pub rate_limiter: Arc<RateLimiter>,
     pub config_root: Arc<PathBuf>,
+    pub provider_catalog: Arc<ProviderCatalog>,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;

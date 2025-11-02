@@ -200,5 +200,18 @@
         "expires_in"
       ]
     }
-  ]
+  ],
+  "secrets": {
+    "client_id_key": "tenants/acme/oauth/msgraph/client_id",
+    "client_secret_key": "tenants/acme/oauth/msgraph/client_secret",
+    "extra": {
+      "azure_tenant_id_key": "tenants/acme/oauth/msgraph/tenant_id"
+    }
+  },
+  "scope_presets": {
+    "mail-read": [
+      "Mail.Read",
+      "offline_access"
+    ]
+  }
 }

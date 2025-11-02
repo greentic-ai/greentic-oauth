@@ -1,0 +1,6 @@
+---
+source: tests/log_snapshot.rs
+assertion_line: 12
+expression: snapshot
+---
+{"timestamp":"1700000000.000","level":"INFO","target":"log_snapshot","service.name":"snapshot-test","service.version":"0.0.0","env":"test","flow":null,"run_id":null,"team":null,"tenant":null,"fields":{"message":"snapshot log","tenant":"demo-tenant","user_id":"007"}}

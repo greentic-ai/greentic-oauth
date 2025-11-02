@@ -2,7 +2,7 @@ use std::{env, sync::Arc};
 
 use url::Url;
 
-use oauth_core::provider::{Provider, ProviderError};
+use greentic_oauth_core::provider::{Provider, ProviderError};
 
 use crate::providers::{
     generic_oidc::GenericOidcProvider,

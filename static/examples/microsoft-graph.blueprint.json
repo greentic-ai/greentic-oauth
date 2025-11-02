@@ -62,5 +62,6 @@
     }
   ],
   "webhooks": null,
-  "expires_at": null
+  "expires_at": null,
+  "auth_url_example": "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize?client_id={client_id}&response_type=code&redirect_uri=https%3A%2F%2Flocalhost%3A8080%2Fcallback&scope=offline_access%20User.Read%20Mail.Read&state={state}"
 }
