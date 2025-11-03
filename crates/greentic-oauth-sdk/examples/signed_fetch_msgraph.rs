@@ -1,27 +1,36 @@
-use std::{env, error::Error};
+use std::env;
 
+use anyhow::{Result, anyhow};
 use greentic_oauth_sdk::{Client, ClientConfig, SignedFetchRequest};
-use greentic_telemetry::init as telemetry_init;
-use greentic_telemetry::{CloudCtx, TelemetryInit, set_context};
+use greentic_types::{
+    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, telemetry::set_current_tenant_ctx,
+};
 use reqwest::Method;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    init_telemetry()?;
+async fn main() -> Result<()> {
+    greentic_types::telemetry::install_telemetry("oauth-sdk-example-signed-fetch")?;
     let config = load_config()?;
     let client = Client::connect(config.clone()).await?;
 
-    let token_handle =
-        env::var("TOKEN_HANDLE").map_err(|_| "TOKEN_HANDLE environment variable required")?;
+    let token_handle = env::var("TOKEN_HANDLE")
+        .map_err(|_| anyhow!("TOKEN_HANDLE environment variable required"))?;
     let fetch_url =
         env::var("FETCH_URL").unwrap_or_else(|_| "https://graph.microsoft.com/v1.0/me".to_string());
 
-    set_context(CloudCtx {
-        tenant: Some(config.tenant.as_str()),
-        team: config.team.as_deref(),
-        flow: None,
-        run_id: Some(token_handle.as_str()),
-    });
+    let mut telemetry_ctx = TelemetryTenantCtx::new(
+        EnvId::from(config.env.as_str()),
+        TenantId::from(config.tenant.as_str()),
+    )
+    .with_provider(config.provider.clone());
+
+    if let Some(team) = config.team.as_deref() {
+        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+    }
+
+    telemetry_ctx = telemetry_ctx.with_session(token_handle.clone());
+
+    set_current_tenant_ctx(&telemetry_ctx);
 
     let request = SignedFetchRequest::new(token_handle.clone(), Method::GET, fetch_url)
         .header("accept", "application/json");
@@ -33,11 +42,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("body:\n{}", String::from_utf8_lossy(&response.body));
 
-    greentic_telemetry::shutdown();
     Ok(())
 }
 
-fn load_config() -> Result<ClientConfig, Box<dyn Error>> {
+fn load_config() -> Result<ClientConfig> {
     let http_base_url =
         env::var("BROKER_HTTP_URL").unwrap_or_else(|_| "http://127.0.0.1:8080/".to_string());
     let nats_url = env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
@@ -54,18 +62,4 @@ fn load_config() -> Result<ClientConfig, Box<dyn Error>> {
         provider,
         team,
     })
-}
-
-fn init_telemetry() -> Result<(), Box<dyn Error>> {
-    let deployment_env = env::var("ENV").unwrap_or_else(|_| "dev".to_string());
-    let deployment_env = Box::leak(deployment_env.into_boxed_str());
-    telemetry_init(
-        TelemetryInit {
-            service_name: "oauth-sdk-example-signed-fetch",
-            service_version: env!("CARGO_PKG_VERSION"),
-            deployment_env,
-        },
-        &["tenant", "team", "flow", "run_id"],
-    )?;
-    Ok(())
 }

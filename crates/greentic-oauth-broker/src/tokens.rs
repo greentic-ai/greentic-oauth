@@ -16,7 +16,10 @@ use crate::{
         index::ConnectionKey,
         secrets_manager::{SecretPath, SecretsManager},
     },
-    telemetry,
+};
+use greentic_types::{
+    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, UserId,
+    telemetry::set_current_tenant_ctx,
 };
 
 const REFRESH_WINDOW_SECS: u64 = 300;
@@ -77,16 +80,23 @@ where
     S: SecretsManager + 'static,
 {
     let claims = ctx.security.jws.verify(token_handle)?;
-    telemetry::set_request_context(
-        Some(claims.tenant.tenant.as_str()),
-        claims.tenant.team.as_deref(),
-        None,
-        Some(claims.subject.as_str()),
-    );
+    let mut telemetry_ctx = TelemetryTenantCtx::new(
+        EnvId::from(claims.tenant.env.as_str()),
+        TenantId::from(claims.tenant.tenant.as_str()),
+    )
+    .with_provider(claims.provider.clone())
+    .with_user(Some(UserId::from(claims.subject.as_str())));
+
+    if let Some(team) = claims.tenant.team.as_deref() {
+        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+    }
+
+    set_current_tenant_ctx(&telemetry_ctx);
+    let team_ref = claims.tenant.team.as_deref();
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,
-        team: claims.tenant.team.as_deref(),
+        team: team_ref,
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {
@@ -271,16 +281,23 @@ where
             return Err(err.into());
         }
     };
-    telemetry::set_request_context(
-        Some(claims.tenant.tenant.as_str()),
-        claims.tenant.team.as_deref(),
-        None,
-        Some(claims.subject.as_str()),
-    );
+    let mut telemetry_ctx = TelemetryTenantCtx::new(
+        EnvId::from(claims.tenant.env.as_str()),
+        TenantId::from(claims.tenant.tenant.as_str()),
+    )
+    .with_provider(claims.provider.clone())
+    .with_user(Some(UserId::from(claims.subject.as_str())));
+
+    if let Some(team) = claims.tenant.team.as_deref() {
+        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+    }
+
+    set_current_tenant_ctx(&telemetry_ctx);
+    let team_ref = claims.tenant.team.as_deref();
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,
-        team: claims.tenant.team.as_deref(),
+        team: team_ref,
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {
@@ -468,16 +485,23 @@ where
             return Err(err.into());
         }
     };
-    telemetry::set_request_context(
-        Some(claims.tenant.tenant.as_str()),
-        claims.tenant.team.as_deref(),
-        None,
-        Some(claims.subject.as_str()),
-    );
+    let mut telemetry_ctx = TelemetryTenantCtx::new(
+        EnvId::from(claims.tenant.env.as_str()),
+        TenantId::from(claims.tenant.tenant.as_str()),
+    )
+    .with_provider(claims.provider.clone())
+    .with_user(Some(UserId::from(claims.subject.as_str())));
+
+    if let Some(team) = claims.tenant.team.as_deref() {
+        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+    }
+
+    set_current_tenant_ctx(&telemetry_ctx);
+    let team_ref = claims.tenant.team.as_deref();
     let attrs = AuditAttributes {
         env: &claims.tenant.env,
         tenant: &claims.tenant.tenant,
-        team: claims.tenant.team.as_deref(),
+        team: team_ref,
         provider: &claims.provider,
     };
     let owner_kind_label = match &claims.owner {

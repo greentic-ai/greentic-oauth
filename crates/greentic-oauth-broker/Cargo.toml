@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 default = []
+network-tests = []
 aws_kms = []
 gcp_kms = []
 
@@ -35,6 +36,7 @@ rustls = { workspace = true }
 webpki-roots = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 greentic-telemetry.workspace = true
+greentic-types = { workspace = true }
 anyhow = { workspace = true }
 once_cell = { workspace = true }
 uuid = { workspace = true }

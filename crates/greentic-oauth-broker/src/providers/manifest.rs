@@ -25,15 +25,15 @@ pub struct ProviderManifest {
     pub label: String,
     #[serde(default = "default_version")]
     pub version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discovery: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub userinfo: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jwks_uri: Option<String>,
     #[serde(default)]
     pub tenant_mode: TenantMode,
@@ -41,7 +41,7 @@ pub struct ProviderManifest {
     pub grant_types: Vec<String>,
     pub redirect_uris: Vec<String>,
     pub secrets: ManifestSecrets,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blueprints: Option<ManifestBlueprints>,
 }
 
@@ -49,15 +49,15 @@ pub struct ProviderManifest {
 pub struct ManifestSecrets {
     pub client_id_key: String,
     pub client_secret_key: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extra: Option<Value>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestBlueprints {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth_url_template: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_presets: Option<HashMap<String, Vec<String>>>,
 }
 

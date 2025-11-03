@@ -8,8 +8,14 @@ default = []
 schemas = ["schemars"]
 
 [dependencies]
+base64 = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+jsonwebtoken = "9"
 serde = { workspace = true }
 schemars = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+uuid = { workspace = true }

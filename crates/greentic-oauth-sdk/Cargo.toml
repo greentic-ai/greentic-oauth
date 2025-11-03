@@ -24,4 +24,5 @@ async-trait = { workspace = true, optional = true }
 
 [dev-dependencies]
 uuid = { workspace = true }
-greentic-telemetry = { workspace = true }
+greentic-types = { workspace = true }
+anyhow = { workspace = true }

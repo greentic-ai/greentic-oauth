@@ -7,7 +7,9 @@ use serde::Deserialize;
 use crate::{
     http::error::AppError,
     storage::{models::Connection, secrets_manager::SecretsManager},
-    telemetry,
+};
+use greentic_types::{
+    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, telemetry::set_current_tenant_ctx,
 };
 
 use super::super::SharedContext;
@@ -36,7 +38,15 @@ pub async fn get_status<S>(
 where
     S: SecretsManager + 'static,
 {
-    telemetry::set_request_context(Some(tenant.as_str()), team.as_deref(), None, None);
+    let mut telemetry_ctx =
+        TelemetryTenantCtx::new(EnvId::from(env.as_str()), TenantId::from(tenant.as_str()))
+            .with_provider(provider.clone());
+
+    if let Some(team_id) = team.as_ref() {
+        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team_id.as_str())));
+    }
+
+    set_current_tenant_ctx(&telemetry_ctx);
 
     let connections = ctx
         .index

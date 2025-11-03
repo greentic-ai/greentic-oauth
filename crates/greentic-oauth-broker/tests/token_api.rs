@@ -40,6 +40,10 @@ use tempfile::tempdir;
 use tokio::{net::TcpListener, task::JoinHandle};
 use tower::ServiceExt;
 
+fn config_root_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
+}
+
 const PROVIDER_ID: &str = "fake";
 
 #[derive(Default)]
@@ -358,7 +362,7 @@ fn build_context(
     let publisher_impl = Arc::new(RecordingPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone();
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog =
         Arc::new(ProviderCatalog::load(&config_root.join("providers")).expect("catalog"));
 

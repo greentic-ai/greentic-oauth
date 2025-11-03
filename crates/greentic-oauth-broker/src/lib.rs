@@ -9,6 +9,5 @@ pub mod providers;
 pub mod rate_limit;
 pub mod security;
 pub mod storage;
-pub mod telemetry;
 pub mod telemetry_nats;
 pub mod tokens;

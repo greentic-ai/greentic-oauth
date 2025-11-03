@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use axum::Router;
@@ -11,24 +11,19 @@ use greentic_oauth_broker::{
     security::SecurityConfig,
     storage::{StorageIndex, env::EnvSecretsManager},
 };
-use greentic_telemetry::prelude::*;
-use greentic_telemetry::{CloudCtx, TelemetryInit, init as telemetry_init, set_context};
 use tokio::signal;
 
-#[tokio::main]
+#[greentic_types::telemetry::main(service_name = "greentic-oauth")]
 async fn main() {
     if let Err(error) = bootstrap().await {
         tracing::error!("broker shut down with error: {error}");
-        std::process::exit(1);
+        process::exit(1);
     }
 }
 
 async fn bootstrap() -> Result<()> {
-    init_telemetry()?;
-    info!(component = "broker", "oauth broker starting up");
-    let result = run().await;
-    greentic_telemetry::shutdown();
-    result
+    tracing::info!(component = "broker", "oauth broker starting up");
+    run().await
 }
 
 async fn run() -> Result<()> {
@@ -122,37 +117,4 @@ async fn run() -> Result<()> {
     }
 
     Ok(())
-}
-
-fn init_telemetry() -> Result<()> {
-    let deployment_env_owned = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
-    let deployment_env = Box::leak(deployment_env_owned.into_boxed_str());
-
-    telemetry_init(
-        TelemetryInit {
-            service_name: "greentic-oauth-broker",
-            service_version: env!("CARGO_PKG_VERSION"),
-            deployment_env,
-        },
-        &["tenant", "team", "flow", "run_id"],
-    )?;
-
-    let tenant = env_to_static("TENANT");
-    let team = env_to_static("TEAM");
-
-    set_context(CloudCtx {
-        tenant,
-        team,
-        flow: None,
-        run_id: None,
-    });
-
-    Ok(())
-}
-
-fn env_to_static(key: &str) -> Option<&'static str> {
-    std::env::var(key).ok().map(|value| {
-        let leaked: &'static mut str = Box::leak(value.into_boxed_str());
-        &*leaked
-    })
 }

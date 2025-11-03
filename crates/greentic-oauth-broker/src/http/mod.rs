@@ -64,12 +64,12 @@ where
             get(handlers::discovery::get_jwks::<S>),
         )
         .route(
-            "/:env/:tenant/:provider/start",
+            "/{env}/{tenant}/{provider}/start",
             get(handlers::initiate::start::<S>),
         )
         .route("/callback", get(handlers::callback::complete::<S>))
         .route(
-            "/status/:env/:tenant/:provider",
+            "/status/{env}/{tenant}/{provider}",
             get(handlers::status::get_status::<S>),
         )
         .route("/token", post(handlers::token::get_access_token::<S>))
@@ -79,7 +79,7 @@ where
             get(handlers::discovery::list_providers::<S>),
         )
         .route(
-            "/oauth/discovery/providers/:provider_id",
+            "/oauth/discovery/providers/{provider_id}",
             get(handlers::discovery::get_base_provider::<S>),
         )
         .route(
@@ -87,15 +87,15 @@ where
             get(handlers::discovery::get_jwks::<S>),
         )
         .route(
-            "/oauth/discovery/:tenant/providers/:provider_id",
+            "/oauth/discovery/{tenant}/providers/{provider_id}",
             get(handlers::discovery::get_scoped_provider::<S>),
         )
         .route(
-            "/oauth/discovery/:tenant/providers/:provider_id/requirements",
+            "/oauth/discovery/{tenant}/providers/{provider_id}/requirements",
             get(handlers::discovery::get_requirements::<S>),
         )
         .route(
-            "/oauth/discovery/:tenant/providers/:provider_id/blueprint",
+            "/oauth/discovery/{tenant}/providers/{provider_id}/blueprint",
             post(handlers::discovery::post_blueprint::<S>),
         )
         .layer(

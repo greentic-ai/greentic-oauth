@@ -39,6 +39,10 @@ use serde::Deserialize;
 use tempfile::tempdir;
 use url::Url;
 
+fn config_root_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
+}
+
 #[derive(Default)]
 struct TestPublisher {
     events: Mutex<Vec<(String, Vec<u8>)>>,
@@ -205,7 +209,7 @@ async fn start_to_callback_happy_path() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
@@ -388,7 +392,7 @@ async fn callback_state_validation_failure() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
@@ -440,7 +444,7 @@ async fn start_rate_limit_enforced() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(1, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
@@ -530,7 +534,7 @@ async fn callback_rate_limit_enforced() {
     let publisher_impl = Arc::new(TestPublisher::default());
     let publisher: SharedPublisher = publisher_impl.clone() as SharedPublisher;
     let rate_limiter = Arc::new(RateLimiter::new(2, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(

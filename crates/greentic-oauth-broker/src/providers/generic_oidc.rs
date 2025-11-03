@@ -400,6 +400,10 @@ mod tests {
         assert_eq!(params.get("state"), Some(&"state456".to_string()));
     }
 
+    #[cfg_attr(
+        not(feature = "network-tests"),
+        ignore = "requires loopback networking"
+    )]
     #[test]
     fn exchange_code_hits_token_endpoint() {
         let rt = Runtime::new().expect("runtime");
@@ -452,6 +456,10 @@ mod tests {
         });
     }
 
+    #[cfg_attr(
+        not(feature = "network-tests"),
+        ignore = "requires loopback networking"
+    )]
     #[test]
     fn refresh_hits_token_endpoint() {
         let rt = Runtime::new().expect("runtime");
