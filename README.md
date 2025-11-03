@@ -21,7 +21,7 @@ Key artifacts:
 ![High-level architecture](assets/mermaid.png)
 
 1. **Client / UI** – requests a flow for a specific tenant/team and redirects the user to the provider consent screen.
-2. **OAuth Broker (`crates/oauth-broker`)** – published as `greentic-oauth-broker`; exposes HTTP + NATS APIs, orchestrates provider flows, signs token handles (JWS), encrypts secrets (JWE), and publishes audit/NATS events.
+2. **OAuth Broker (`crates/greentic-oauth-broker`)** – published as `greentic-oauth-broker`; exposes HTTP + NATS APIs, orchestrates provider flows, signs token handles (JWS), encrypts secrets (JWE), and publishes audit/NATS events.
 3. **Secrets Manager** – default `EnvSecretsManager` persists encrypted payloads under `envs/{env}/tenants/{tenant}/…`.
 4. **Provider integrations** – pluggable providers (Microsoft Graph, Generic OIDC today) registered via env-driven config.
 5. **Worker / SDKs** – `oauth-worker` (Cloudflare Worker example) and `greentic-oauth-sdk` (Rust SDK + WIT bindings) consume broker APIs for automation and WASM embedding.
@@ -103,7 +103,7 @@ The broker optionally connects to NATS (`NATS_URL`, `NATS_TLS_DOMAIN`). Requests
 
 ## WIT Contract
 
-The WASM component interface lives in [`crates/oauth-wit/greentic.oauth@0.1.0.wit`](crates/oauth-wit/greentic.oauth@0.1.0.wit) and is bound by the Rust SDK (`crates/oauth-sdk/src/wit.rs`). Key definitions:
+The WASM component interface lives in [`crates/oauth-wit/greentic.oauth@0.1.0.wit`](crates/oauth-wit/greentic.oauth@0.1.0.wit) and is bound by the Rust SDK (`crates/greentic-oauth-sdk/src/wit.rs`). Key definitions:
 
 ```wit
 package greentic:oauth@0.1.0;
@@ -176,13 +176,13 @@ Trigger the workflow manually via “Run workflow” if you need to republish; a
 5. **Enable NATS (optional)** by setting `NATS_URL` (+ `NATS_TLS_DOMAIN` when using TLS). The broker will publish/resubscribe automatically.
 6. **Deploy SDK/worker consumers** so applications can initiate flows and use issued token handles.
 
-Add new providers by implementing the `greentic_oauth_core::provider::Provider` trait, packaging it under `crates/oauth-broker/src/providers`, registering it in `ProviderRegistry`, and supplying appropriate env wiring.
+Add new providers by implementing the `greentic_oauth_core::provider::Provider` trait, packaging it under `crates/greentic-oauth-broker/src/providers`, registering it in `ProviderRegistry`, and supplying appropriate env wiring.
 
 ## SDK & Examples
 
-- **Rust SDK**: [`crates/oauth-sdk`](crates/oauth-sdk/) ships as `greentic-oauth-sdk` and exposes a high-level `Client` plus component host bindings for WASM environments.
+- **Rust SDK**: [`crates/greentic-oauth-sdk`](crates/greentic-oauth-sdk/) ships as `greentic-oauth-sdk` and exposes a high-level `Client` plus component host bindings for WASM environments.
 - **Worker Example**: [`oauth-worker`](oauth-worker/) demonstrates how to expose HTTP routes in a serverless edge runtime using the SDK.
-- **Tests**: Integration suites under [`crates/oauth-broker/tests`](crates/oauth-broker/tests/) show end-to-end HTTP and NATS flows, including audit assertions.
+- **Tests**: Integration suites under [`crates/greentic-oauth-broker/tests`](crates/greentic-oauth-broker/tests/) show end-to-end HTTP and NATS flows, including audit assertions.
 
 ### Quick Usage Flow (pseudo)
 

@@ -11,7 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Lint & Test
         run: |
@@ -19,7 +21,7 @@ jobs:
           cargo clippy --workspace --all-targets -- -D warnings
           cargo build --workspace --all-features
           cargo test --workspace --all-features -- --nocapture
-          cargo build -p oauth-broker --release
+          cargo build -p greentic-oauth-broker --release
 
   publish:
     if: github.event_name == 'push'
@@ -30,7 +32,9 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Publish changed crates
         uses: katyo/publish-crates@v2

@@ -1,0 +1,15 @@
+[package]
+name = "greentic-oauth-core"
+version.workspace = true
+edition = "2024"
+
+[features]
+default = []
+schemas = ["schemars"]
+
+[dependencies]
+serde = { workspace = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
