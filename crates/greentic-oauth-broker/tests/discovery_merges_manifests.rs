@@ -91,6 +91,7 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         rate_limiter,
         config_root,
         provider_catalog,
+        allow_insecure: true,
     })
 }
 

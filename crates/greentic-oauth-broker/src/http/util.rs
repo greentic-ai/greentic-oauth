@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{HeaderName, HeaderValue, Response, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, Response, StatusCode, header};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -8,6 +8,39 @@ use crate::http::error::AppError;
 
 const SPEC_VERSION: &str = "1.0";
 const CACHE_CONTROL_VALUE: &str = "max-age=60";
+
+pub fn ensure_secure_request(headers: &HeaderMap, allow_insecure: bool) -> Result<(), AppError> {
+    if allow_insecure {
+        return Ok(());
+    }
+
+    if let Some(value) = headers.get("x-forwarded-proto")
+        && value
+            .to_str()
+            .map(|proto| proto.eq_ignore_ascii_case("https"))
+            .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    if let Some(value) = headers.get(header::FORWARDED)
+        && let Ok(forwarded) = value.to_str()
+    {
+        for part in forwarded.split(';').flat_map(|segment| segment.split(',')) {
+            let trimmed = part.trim();
+            if let Some(proto_part) = trimmed.strip_prefix("proto=")
+                && proto_part.trim_matches('"').eq_ignore_ascii_case("https")
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    Err(AppError::new(
+        StatusCode::FORBIDDEN,
+        "insecure request rejected; set ALLOW_INSECURE=true to bypass",
+    ))
+}
 
 pub fn json_response(value: Value) -> Result<Response<Body>, AppError> {
     let body = serde_json::to_vec(&value)?;

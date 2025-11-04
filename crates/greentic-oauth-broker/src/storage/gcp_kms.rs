@@ -11,6 +11,12 @@ impl GcpKmsSecretsManager {
     }
 }
 
+impl Default for GcpKmsSecretsManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecretsManager for GcpKmsSecretsManager {
     fn put_json<T: Serialize>(&self, _: &SecretPath, _: &T) -> Result<(), StorageError> {
         Err(StorageError::Unsupported(

@@ -73,6 +73,11 @@ async fn run() -> Result<()> {
         Duration::from_secs(rate_limit_window_secs.max(1)),
     ));
 
+    let allow_insecure = std::env::var("ALLOW_INSECURE")
+        .ok()
+        .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
+        .unwrap_or(false);
+
     let context = http::AppContext {
         providers,
         security,
@@ -83,8 +88,14 @@ async fn run() -> Result<()> {
         rate_limiter,
         config_root: config_root.clone(),
         provider_catalog,
+        allow_insecure,
     };
     let shared_context = Arc::new(context);
+
+    #[cfg(feature = "refresh-worker")]
+    let mut refresh_handle = Some(greentic_oauth_broker::refresh::spawn_refresh_worker(
+        shared_context.clone(),
+    ));
 
     let mut nats_handle = None;
     if let Some((writer, reader)) = nats_parts {
@@ -116,5 +127,16 @@ async fn run() -> Result<()> {
         handle.abort();
     }
 
+    #[cfg(feature = "refresh-worker")]
+    if let Some(handle) = refresh_handle.take() {
+        handle.abort();
+    }
+
     Ok(())
+}
+
+fn matches_ignore_ascii_case(value: &str, choices: &[&str]) -> bool {
+    choices
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
 }

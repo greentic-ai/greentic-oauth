@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect},
 };
 use greentic_oauth_core::types::{OAuthFlowRequest, OwnerKind, TenantCtx as BrokerTenantCtx};
@@ -14,7 +14,8 @@ use serde_json::json;
 
 use crate::{
     audit::{self, AuditAttributes},
-    http::{error::AppError, state::FlowState},
+    http::{error::AppError, state::FlowState, util::ensure_secure_request},
+    providers::manifest::ManifestContext,
     rate_limit,
     security::pkce::PkcePair,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
@@ -121,10 +122,51 @@ where
         .get(&request.provider)
         .ok_or_else(|| AppError::not_found("provider not registered"))?;
 
-    if let Some(ref uri) = request.redirect_uri {
-        if !ctx.redirect_guard.is_allowed(uri) {
-            return Err(AppError::bad_request("redirect_uri not permitted"));
+    let manifest_ctx = ManifestContext::new(
+        &request.tenant,
+        &request.provider,
+        request.team.as_deref(),
+        None,
+    );
+    let resolved_manifest = ctx
+        .provider_catalog
+        .resolve(&request.provider, &manifest_ctx);
+
+    if let Some(ref uri) = request.redirect_uri
+        && !ctx.redirect_guard.is_allowed(uri)
+    {
+        return Err(AppError::bad_request("redirect_uri not permitted"));
+    }
+
+    if let Some(manifest) = &resolved_manifest {
+        let provider_redirect = provider.redirect_uri();
+        if !manifest
+            .redirect_uris
+            .iter()
+            .any(|uri| uri == provider_redirect)
+        {
+            return Err(AppError::internal(format!(
+                "provider redirect_uri `{provider_redirect}` not registered for `{}`",
+                request.provider
+            )));
         }
+    }
+
+    let mut scopes = if request.scopes.is_empty() {
+        resolved_manifest
+            .as_ref()
+            .map(|manifest| manifest.scopes.clone())
+            .unwrap_or_default()
+    } else {
+        request.scopes.clone()
+    };
+
+    if scopes.is_empty() {
+        scopes = vec![
+            "offline_access".to_string(),
+            "openid".to_string(),
+            "profile".to_string(),
+        ];
     }
 
     let pkce = PkcePair::generate();
@@ -139,7 +181,7 @@ where
         &request.owner_id,
         request.redirect_uri.clone(),
         &pkce.verifier,
-        request.scopes.clone(),
+        scopes.clone(),
         request.visibility.clone(),
     );
 
@@ -157,7 +199,7 @@ where
         owner,
         redirect_uri: provider.redirect_uri().to_string(),
         state: Some(state_token.clone()),
-        scopes: request.scopes.clone(),
+        scopes: scopes.clone(),
         code_challenge: Some(pkce.challenge.clone()),
         code_challenge_method: Some("S256".to_string()),
     };
@@ -174,7 +216,7 @@ where
         "flow_id": request.flow_id.clone(),
         "owner_kind": request.owner_kind.as_str(),
         "owner_id": request.owner_id.clone(),
-        "scopes": request.scopes.clone(),
+        "scopes": scopes,
         "visibility": request.visibility.as_str(),
         "redirect_uri": request.redirect_uri.clone(),
     });
@@ -199,11 +241,14 @@ pub async fn start<S>(
         redirect_uri,
         visibility,
     }): Query<StartQuery>,
+    headers: HeaderMap,
     State(ctx): State<SharedContext<S>>,
 ) -> Result<impl IntoResponse, AppError>
 where
     S: SecretsManager + 'static,
 {
+    ensure_secure_request(&headers, ctx.allow_insecure)?;
+
     let owner_kind_key = OwnerKindKey::from_str(owner_kind.as_str())
         .map_err(|_| AppError::bad_request("invalid owner_kind"))?;
 

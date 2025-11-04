@@ -7,6 +7,8 @@ pub mod mcp;
 pub mod nats;
 pub mod providers;
 pub mod rate_limit;
+#[cfg(feature = "refresh-worker")]
+pub mod refresh;
 pub mod security;
 pub mod storage;
 pub mod telemetry_nats;

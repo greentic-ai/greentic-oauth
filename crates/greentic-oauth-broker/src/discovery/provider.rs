@@ -475,13 +475,13 @@ fn build_query(team: Option<&str>, user: Option<&str>) -> String {
 
 impl ProviderDescriptor {
     fn apply_overlay(&mut self, overlay: ProviderOverlay) -> Result<()> {
-        if let Some(id) = overlay.id {
-            if id != self.id {
-                return Err(DiscoveryError::Invalid(format!(
-                    "overlay id `{id}` does not match base `{}`",
-                    self.id
-                )));
-            }
+        if let Some(id) = overlay.id
+            && id != self.id
+        {
+            return Err(DiscoveryError::Invalid(format!(
+                "overlay id `{id}` does not match base `{}`",
+                self.id
+            )));
         }
 
         if let Some(display_name) = overlay.display_name {
@@ -598,24 +598,24 @@ pub fn load_provider_descriptor(
             descriptor.apply_overlay(overlay)?;
         }
 
-        if let Some(team) = team {
-            if let Some(overlay) = load_overlay(
+        if let Some(team) = team
+            && let Some(overlay) = load_overlay(
                 root,
                 &["tenants", tenant, "teams", team, "oauth"],
                 provider_id,
-            )? {
-                descriptor.apply_overlay(overlay)?;
-            }
+            )?
+        {
+            descriptor.apply_overlay(overlay)?;
         }
 
-        if let Some(user) = user {
-            if let Some(overlay) = load_overlay(
+        if let Some(user) = user
+            && let Some(overlay) = load_overlay(
                 root,
                 &["tenants", tenant, "users", user, "oauth"],
                 provider_id,
-            )? {
-                descriptor.apply_overlay(overlay)?;
-            }
+            )?
+        {
+            descriptor.apply_overlay(overlay)?;
         }
     }
 

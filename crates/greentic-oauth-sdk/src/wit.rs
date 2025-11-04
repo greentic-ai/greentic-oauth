@@ -1,34 +1,33 @@
 use anyhow::{Result as AnyhowResult, anyhow};
-use async_trait::async_trait;
 use base64::Engine;
 use reqwest::Method;
-use std::time::Duration;
+use std::{future::Future, time::Duration};
+use tokio::runtime::Handle;
 
 use crate::{
-    AccessToken, Client, FlowResult, InitiateAuthRequest, InitiateAuthResponse, OwnerKind,
-    SignedFetchRequest, SignedFetchResponse, Visibility,
+    Client, FlowResult, InitiateAuthRequest, InitiateAuthResponse, OwnerKind, SignedFetchRequest,
+    SignedFetchResponse, Visibility,
 };
 
 wasmtime::component::bindgen!({
     path: "../../oauth-wit/greentic.oauth@0.1.0.wit",
     world: "broker",
-    async: true,
 });
 
 /// Host adapter that wires the SDK client into the WASM component model.
+#[derive(Clone)]
 pub struct BrokerHost {
     pub client: Client,
 }
 
-#[async_trait]
 impl broker::Host for BrokerHost {
     type Error = anyhow::Error;
 
-    async fn health_check(&mut self) -> AnyhowResult<String> {
+    fn health_check(&mut self) -> AnyhowResult<String> {
         Ok("ok".to_string())
     }
 
-    async fn initiate_auth(
+    fn initiate_auth(
         &mut self,
         request: broker::InitiateRequest,
     ) -> AnyhowResult<broker::InitiateResponse> {
@@ -49,45 +48,37 @@ impl broker::Host for BrokerHost {
             redirect_uri: request.redirect_uri,
             visibility,
         };
-        let response = self
-            .client
-            .initiate_auth(init_request)
-            .await
-            .map_err(map_sdk_error)?;
+        let client = self.client.clone();
+        let response = self.block(async move { client.initiate_auth(init_request).await })?;
         Ok(to_wit_initiate_response(response))
     }
 
-    async fn await_result(
+    fn await_result(
         &mut self,
         flow_id: String,
         timeout_ms: Option<u64>,
     ) -> AnyhowResult<broker::FlowResult> {
         let timeout = timeout_ms.map(Duration::from_millis);
-        let result = self
-            .client
-            .await_result(&flow_id, timeout)
-            .await
-            .map_err(map_sdk_error)?;
+        let client = self.client.clone();
+        let result = self.block(async move { client.await_result(&flow_id, timeout).await })?;
         Ok(to_wit_flow_result(result)?)
     }
 
-    async fn get_access_token(
+    fn get_access_token(
         &mut self,
         token_handle: String,
         force_refresh: bool,
     ) -> AnyhowResult<broker::GetAccessTokenResult> {
-        let token = self
-            .client
-            .get_access_token(&token_handle, force_refresh)
-            .await
-            .map_err(map_sdk_error)?;
+        let client = self.client.clone();
+        let token =
+            self.block(async move { client.get_access_token(&token_handle, force_refresh).await })?;
         Ok(broker::GetAccessTokenResult {
             access_token: token.access_token,
             expires_at: token.expires_at,
         })
     }
 
-    async fn signed_fetch(
+    fn signed_fetch(
         &mut self,
         request: broker::SignedFetchRequest,
     ) -> AnyhowResult<broker::SignedFetchResponse> {
@@ -113,64 +104,51 @@ impl broker::Host for BrokerHost {
             headers,
             body,
         };
-        let response = self
-            .client
-            .signed_fetch(signed_request)
-            .await
-            .map_err(map_sdk_error)?;
-        Ok(broker::SignedFetchResponse {
-            status: response.status,
-            headers: response
-                .headers
-                .into_iter()
-                .map(|(name, value)| broker::Header { name, value })
-                .collect(),
-            body: base64::engine::general_purpose::STANDARD.encode(response.body),
-            body_encoding: "base64".to_string(),
-        })
+        let client = self.client.clone();
+        let response = self.block(async move { client.signed_fetch(signed_request).await })?;
+        Ok(to_wit_signed_fetch_response(response))
     }
 }
 
-#[async_trait]
 impl discovery::Host for BrokerHost {
     type Error = anyhow::Error;
 
-    async fn list_providers(&mut self) -> AnyhowResult<Vec<String>> {
-        let providers = self.client.list_providers().await.map_err(map_sdk_error)?;
-        Ok(providers)
+    fn list_providers(&mut self) -> AnyhowResult<Vec<String>> {
+        let client = self.client.clone();
+        self.block(async move { client.list_providers().await })
     }
 
-    async fn get_descriptor(
+    fn get_descriptor(
         &mut self,
         tenant: String,
         provider: String,
         team: Option<String>,
         user: Option<String>,
     ) -> AnyhowResult<String> {
-        let descriptor = self
-            .client
-            .get_provider_descriptor_json(&tenant, &provider, team.as_deref(), user.as_deref())
-            .await
-            .map_err(map_sdk_error)?;
-        Ok(descriptor)
+        let client = self.client.clone();
+        self.block(async move {
+            client
+                .get_provider_descriptor_json(&tenant, &provider, team.as_deref(), user.as_deref())
+                .await
+        })
     }
 
-    async fn get_requirements(
+    fn get_requirements(
         &mut self,
         tenant: String,
         provider: String,
         team: Option<String>,
         user: Option<String>,
     ) -> AnyhowResult<String> {
-        let requirements = self
-            .client
-            .get_config_requirements_json(&tenant, &provider, team.as_deref(), user.as_deref())
-            .await
-            .map_err(map_sdk_error)?;
-        Ok(requirements)
+        let client = self.client.clone();
+        self.block(async move {
+            client
+                .get_config_requirements_json(&tenant, &provider, team.as_deref(), user.as_deref())
+                .await
+        })
     }
 
-    async fn start_flow(
+    fn start_flow(
         &mut self,
         tenant: String,
         provider: String,
@@ -178,18 +156,18 @@ impl discovery::Host for BrokerHost {
         team: Option<String>,
         user: Option<String>,
     ) -> AnyhowResult<String> {
-        let blueprint = self
-            .client
-            .start_flow_blueprint_json(
-                &tenant,
-                &provider,
-                &grant_type,
-                team.as_deref(),
-                user.as_deref(),
-            )
-            .await
-            .map_err(map_sdk_error)?;
-        Ok(blueprint)
+        let client = self.client.clone();
+        self.block(async move {
+            client
+                .start_flow_blueprint_json(
+                    &tenant,
+                    &provider,
+                    &grant_type,
+                    team.as_deref(),
+                    user.as_deref(),
+                )
+                .await
+        })
     }
 }
 
@@ -202,7 +180,8 @@ fn to_wit_initiate_response(response: InitiateAuthResponse) -> broker::InitiateR
 }
 
 fn to_wit_flow_result(result: FlowResult) -> AnyhowResult<broker::FlowResult> {
-    let claims_json = serde_json::to_string(&result.token_handle_claims)?;
+    let token_handle = serde_json::to_string(&result.token_handle_claims)
+        .map_err(|err| anyhow!("serialize token handle: {err}"))?;
     Ok(broker::FlowResult {
         flow_id: result.flow_id,
         env: result.env,
@@ -210,10 +189,33 @@ fn to_wit_flow_result(result: FlowResult) -> AnyhowResult<broker::FlowResult> {
         team: result.team,
         provider: result.provider,
         storage_path: result.storage_path,
-        token_handle_claims_json: claims_json,
+        token_handle_claims_json: token_handle,
     })
+}
+
+fn to_wit_signed_fetch_response(response: SignedFetchResponse) -> broker::SignedFetchResponse {
+    broker::SignedFetchResponse {
+        status: response.status,
+        headers: response
+            .headers
+            .into_iter()
+            .map(|(name, value)| broker::Header { name, value })
+            .collect(),
+        body: base64::engine::general_purpose::STANDARD.encode(response.body),
+        body_encoding: "base64".to_string(),
+    }
 }
 
 fn map_sdk_error(err: crate::SdkError) -> anyhow::Error {
     anyhow!(err)
+}
+
+impl BrokerHost {
+    fn block<F, T>(&self, fut: F) -> AnyhowResult<T>
+    where
+        F: Future<Output = Result<T, crate::SdkError>> + Send + 'static,
+        T: Send + 'static,
+    {
+        Handle::current().block_on(fut).map_err(map_sdk_error)
+    }
 }

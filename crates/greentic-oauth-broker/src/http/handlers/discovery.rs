@@ -81,24 +81,23 @@ where
     let root = ctx.config_root.join("providers");
     let entries = fs::read_dir(&root).map_err(|err| AppError::internal(err.to_string()))?;
     for entry in entries.flatten() {
-        if let Some(ext) = entry.path().extension() {
-            if ext == "yaml" {
-                if let Some(file_stem) = entry.path().file_stem().and_then(|s| s.to_str()) {
-                    if seen.contains(file_stem) {
-                        continue;
-                    }
-                    match load_provider_descriptor(&*ctx.config_root, file_stem, None, None, None) {
-                        Ok(descriptor) => {
-                            providers.push(ProviderCatalogEntry {
-                                id: descriptor.id.clone(),
-                                label: descriptor.display_name,
-                                version: "legacy".to_string(),
-                            });
-                            seen.insert(descriptor.id);
-                        }
-                        Err(err) => return Err(map_error(err)),
-                    }
+        if let Some(ext) = entry.path().extension()
+            && ext == "yaml"
+            && let Some(file_stem) = entry.path().file_stem().and_then(|s| s.to_str())
+        {
+            if seen.contains(file_stem) {
+                continue;
+            }
+            match load_provider_descriptor(&*ctx.config_root, file_stem, None, None, None) {
+                Ok(descriptor) => {
+                    providers.push(ProviderCatalogEntry {
+                        id: descriptor.id.clone(),
+                        label: descriptor.display_name,
+                        version: "legacy".to_string(),
+                    });
+                    seen.insert(descriptor.id);
                 }
+                Err(err) => return Err(map_error(err)),
             }
         }
     }
@@ -287,10 +286,10 @@ where
         &body.grant_type,
     );
 
-    if let Some(resolved_manifest) = manifest.as_ref() {
-        if let Some(url) = expand_blueprint_auth_url(resolved_manifest, &descriptor, &body) {
-            blueprint.auth_url_example = Some(url);
-        }
+    if let Some(resolved_manifest) = manifest.as_ref()
+        && let Some(url) = expand_blueprint_auth_url(resolved_manifest, &descriptor, &body)
+    {
+        blueprint.auth_url_example = Some(url);
     }
 
     json_response_from_serializable(&blueprint)

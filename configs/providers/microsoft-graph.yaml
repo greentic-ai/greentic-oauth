@@ -11,6 +11,7 @@ device_code_url: https://login.microsoftonline.com/common/oauth2/v2.0/devicecode
 scopes:
   - offline_access
   - openid
+  - profile
   - User.Read
   - Mail.Read
   - Calendars.Read
@@ -27,5 +28,17 @@ webhook_requirements:
 metadata:
   service: microsoft-graph
   category: productivity
+  authority_tenant: common
+  resource_audience: https://graph.microsoft.com
+  default_scope_sets:
+    delegated:
+      - offline_access
+      - openid
+      - profile
+      - User.Read
+      - Mail.Read
+      - Calendars.Read
+    application:
+      - https://graph.microsoft.com/.default
   compliance:
     gdpr: true

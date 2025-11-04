@@ -1,0 +1,19 @@
+[package]
+name = "greentic-axum-example"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+axum = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+dotenvy = "0.15"
+greentic-oauth-sdk = { workspace = true }
+uuid = { workspace = true }
+greentic-oauth-core = { workspace = true }

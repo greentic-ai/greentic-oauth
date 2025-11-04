@@ -152,6 +152,7 @@ The broker emits OpenTelemetry traces and JSON logs through [`greentic-telemetry
 | `ENV` | `dev` | Deployment environment stamped into telemetry (`service.environment`). |
 | `TENANT` | _empty_ | Default tenant context applied to all spans/logs until overridden per request. |
 | `TEAM` | _empty_ | Default team context applied to all spans/logs until overridden per request. |
+| `ALLOW_INSECURE` | `false` | Permit HTTP handling without TLS enforcement (intended only for local development). |
 
 Set `TELEMETRY_EXPORT=json-stdout` during local development to stream structured logs containing `service.name=greentic-oauth-broker`, `service.environment`, and the default tenant/team context.
 
@@ -169,7 +170,7 @@ Trigger the workflow manually via “Run workflow” if you need to republish; a
 
 1. **Register credentials** with the upstream provider and obtain client IDs/secrets.
 2. **Configure environment variables** on the broker host:
-   - Microsoft Graph: `MSGRAPH_CLIENT_ID`, `MSGRAPH_CLIENT_SECRET`, `MSGRAPH_TENANT_MODE` (`single`/`multi`), `MSGRAPH_REDIRECT_URI`.
+   - Microsoft Graph: `MSGRAPH_CLIENT_ID`, `MSGRAPH_CLIENT_SECRET`, `MSGRAPH_TENANT_MODE` (`common`, `organizations`, `consumers`, or `single:<tenantId>`), `MSGRAPH_REDIRECT_URI`, optional `MSGRAPH_DEFAULT_SCOPES`, optional `MSGRAPH_RESOURCE`.
    - Generic OIDC: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`, `OIDC_REDIRECT_URI`, optional `OIDC_DEFAULT_SCOPES`.
 3. **Whitelist redirects** via `OAUTH_REDIRECT_WHITELIST=https://app.greentic.ai/`.
 4. **Expose secret storage** (`SECRETS_DIR`) and ensure volume durability & access controls.
@@ -236,3 +237,33 @@ let response = broker::initiate_auth(&mut host, broker::InitiateRequest {
 ```
 
 With these contracts in place, backend services, workers, and WASM components can orchestrate OAuth flows, audit activity, and perform delegated API calls using a consistent multi-tenant model.
+
+## Multi-Tenancy & Secrets Schema
+
+Every broker instance resolves configuration using the tuple `{env, tenant, team?, user?}`. Provider manifests live under `configs/providers/<provider>.yaml`; tenant/team/user overlays are merged deterministically (`env → tenant → team → user`) from `configs/tenants/<tenant>/**/<provider>.yaml`. Secrets are persisted using the derived storage path defined in `FlowState::secret_path`, producing files such as `envs/dev/tenants/acme/providers/microsoft-graph/user-user-1.json`. The default `EnvSecretsManager` stores a `StoredToken` envelope containing encrypted bytes plus an optional `expires_at` so that background refresh jobs can operate without re-reading token handles.
+
+## Providers & Scopes
+
+Manifests declare default scopes (`scopes`) and optional presets (`metadata.default_scope_sets`). The Microsoft Graph manifest, for example, exposes bundles for delegated mail, Teams collaboration, calendar ingestion, and OneDrive. HTTP start requests that omit `scopes` inherit the manifest defaults, ensuring flows succeed even for new tenants. The discovery API surfaces these same presets so workers can programmatically select the minimum permission set.
+
+## PKCE + Secure State (JWT)
+
+`/start` generates a fresh PKCE verifier (S256) per flow and stashes the corresponding challenge in the outbound redirect. The opaque `state` returned to clients is a JWT signed by the broker (`SecurityConfig::csrf`), embedding the flow metadata and PKCE verifier. During the callback we verify the signature, hydrate the flow state, and reject replays or tampering before exchanging the authorization code.
+
+## Token Storage & Refresh
+
+Successful callbacks JWE-encrypt the provider `TokenSet` and write it under the computed secret path. A signed token handle (JWS) is returned to callers and contains the tenant context, owner kind, and expiry. `POST /token` and the signed fetch repeater both call `resolve_access_token`, which transparently refreshes near-expiry tokens (using provider refresh endpoints) and emits structured audit events (`oauth.audit.*.refresh`). Optional background refresh is gated behind the `refresh-worker` feature flag.
+
+## Tracing Telemetry (gt.*)
+
+All request handlers attach tenant metadata to the current tracing span (`gt.env`, `gt.tenant`, `gt.team`, `gt.provider`). Set `OTEL_EXPORTER_OTLP_ENDPOINT` to emit spans via `greentic-telemetry`; tracing output can also fall back to structured JSON (`gt.message`, `gt.flow_id`, `gt.status`) via `json-stdout`. The example Axum app below shows how to initialise tracing with `tracing-subscriber` and propagate the tenant context for demo flows.
+
+## Examples Directory
+
+The repository now ships a minimal Axum integration under `examples/axum-app/`. The sample uses mock implementations so it runs without a live broker, but the handlers mirror the real SDK calls:
+
+- `POST /oauth/start` fabricates an `InitiateAuthRequest` and returns a redirect URL/state pair.
+- `GET /oauth/callback` hydrates a `FlowResult` similar to the broker’s NATS payload.
+- `POST /oauth/token` and `POST /oauth/signed-fetch` demonstrate token exchange and signed fetch wiring.
+
+Copy `.env.example` to `.env` and `cargo run -p greentic-axum-example` to exercise the happy path locally. Mock secrets for Google, Microsoft, and GitHub live under `examples/axum-app/secrets/` to illustrate the expected JSON shape for local development.

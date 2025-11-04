@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
 
@@ -24,7 +24,7 @@ use greentic_oauth_broker::{
         },
         state::FlowState,
     },
-    providers::manifest::ProviderCatalog,
+    providers::manifest::{ManifestContext, ProviderCatalog},
     rate_limit::RateLimiter,
     security::{SecurityConfig, csrf::CsrfKey, jwe::JweVault, jws::JwsService},
     storage::{
@@ -178,6 +178,7 @@ fn build_context(
     rate_limiter: Arc<RateLimiter>,
     config_root: Arc<PathBuf>,
     provider_catalog: Arc<ProviderCatalog>,
+    allow_insecure: bool,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: provider_registry,
@@ -189,6 +190,7 @@ fn build_context(
         rate_limiter,
         config_root,
         provider_catalog,
+        allow_insecure,
     })
 }
 
@@ -222,6 +224,7 @@ async fn start_to_callback_happy_path() {
         rate_limiter.clone(),
         config_root.clone(),
         provider_catalog.clone(),
+        true,
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -239,6 +242,7 @@ async fn start_to_callback_happy_path() {
             redirect_uri: Some("https://app.example.com/success".into()),
             visibility: Some("team".into()),
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await
@@ -266,6 +270,7 @@ async fn start_to_callback_happy_path() {
             state: Some(state_param.clone()),
             error: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await
@@ -405,6 +410,7 @@ async fn callback_state_validation_failure() {
         rate_limiter,
         config_root.clone(),
         provider_catalog,
+        true,
     );
 
     let response = callback::complete::<EnvSecretsManager>(
@@ -413,6 +419,7 @@ async fn callback_state_validation_failure() {
             state: Some("invalid-state-token".into()),
             error: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await;
@@ -425,6 +432,74 @@ async fn callback_state_validation_failure() {
         events.iter().any(|(subject, _)| subject == error_subject),
         "expected callback_error audit event"
     );
+}
+
+#[tokio::test]
+async fn start_populates_scopes_from_manifest_when_missing() {
+    let mut registry = ProviderRegistry::new();
+    let mut provider = FakeProvider::new();
+    provider.redirect_uri = "https://localhost:8080/callback".to_string();
+    let custom_provider = Arc::new(provider);
+    registry.insert(
+        "microsoft-graph",
+        custom_provider.clone() as Arc<dyn Provider>,
+    );
+    let provider_registry = Arc::new(registry);
+
+    let security = Arc::new(security_config());
+    let secrets =
+        Arc::new(EnvSecretsManager::new(tempdir().unwrap().path().to_path_buf()).unwrap());
+    let index = Arc::new(StorageIndex::new());
+    let redirect_guard = Arc::new(
+        RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
+    );
+    let publisher: SharedPublisher = Arc::new(TestPublisher::default());
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(config_root_path());
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
+
+    let context = build_context(
+        provider_registry,
+        security,
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter,
+        config_root.clone(),
+        provider_catalog.clone(),
+        true,
+    );
+
+    initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "microsoft-graph".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-001".into(),
+            scopes: None,
+            redirect_uri: Some("https://app.example.com/success".into()),
+            visibility: None,
+        }),
+        HeaderMap::new(),
+        State(context),
+    )
+    .await
+    .expect("start request");
+
+    let recorded = custom_provider.requests.lock().expect("requests lock");
+    let captured = recorded.first().expect("request captured");
+    let manifest_ctx = ManifestContext::new("acme", "microsoft-graph", None, None);
+    let manifest_scopes = provider_catalog
+        .resolve("microsoft-graph", &manifest_ctx)
+        .expect("manifest")
+        .scopes;
+    assert_eq!(captured.scopes, manifest_scopes);
 }
 
 #[tokio::test]
@@ -457,6 +532,7 @@ async fn start_rate_limit_enforced() {
         rate_limiter,
         config_root.clone(),
         provider_catalog,
+        true,
     );
 
     initiate::start::<EnvSecretsManager>(
@@ -474,6 +550,7 @@ async fn start_rate_limit_enforced() {
             redirect_uri: None,
             visibility: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await
@@ -494,6 +571,7 @@ async fn start_rate_limit_enforced() {
             redirect_uri: None,
             visibility: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await;
@@ -515,6 +593,88 @@ async fn start_rate_limit_enforced() {
         1,
         "only one started event expected"
     );
+}
+
+#[tokio::test]
+async fn start_rejects_insecure_without_forwarded_proto() {
+    let mut registry = ProviderRegistry::new();
+    let fake_provider = Arc::new(FakeProvider::new());
+    registry.insert("fake", fake_provider.clone() as Arc<dyn Provider>);
+    let provider_registry = Arc::new(registry);
+
+    let security = Arc::new(security_config());
+    let secrets =
+        Arc::new(EnvSecretsManager::new(tempdir().unwrap().path().to_path_buf()).unwrap());
+    let index = Arc::new(StorageIndex::new());
+    let redirect_guard = Arc::new(
+        RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
+    );
+    let publisher: SharedPublisher = Arc::new(TestPublisher::default());
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(config_root_path());
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
+
+    let context = build_context(
+        provider_registry,
+        security,
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter,
+        config_root.clone(),
+        provider_catalog,
+        false,
+    );
+
+    let insecure = initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "fake".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-https".into(),
+            scopes: None,
+            redirect_uri: Some("https://app.example.com/success".into()),
+            visibility: None,
+        }),
+        HeaderMap::new(),
+        State(context.clone()),
+    )
+    .await;
+
+    let status = match insecure {
+        Ok(_) => panic!("plain http should be rejected"),
+        Err(err) => err.into_response().status(),
+    };
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+    initiate::start::<EnvSecretsManager>(
+        Path(StartPath {
+            env: "prod".into(),
+            tenant: "acme".into(),
+            provider: "fake".into(),
+        }),
+        Query(StartQuery {
+            team: None,
+            owner_kind: "user".into(),
+            owner_id: "user-1".into(),
+            flow_id: "flow-https".into(),
+            scopes: None,
+            redirect_uri: Some("https://app.example.com/success".into()),
+            visibility: None,
+        }),
+        headers,
+        State(context),
+    )
+    .await
+    .expect("https proto should pass");
 }
 
 #[tokio::test]
@@ -547,6 +707,7 @@ async fn callback_rate_limit_enforced() {
         rate_limiter.clone(),
         config_root.clone(),
         provider_catalog.clone(),
+        true,
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -564,6 +725,7 @@ async fn callback_rate_limit_enforced() {
             redirect_uri: None,
             visibility: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await
@@ -590,6 +752,7 @@ async fn callback_rate_limit_enforced() {
             state: Some(state_param.clone()),
             error: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await
@@ -601,6 +764,7 @@ async fn callback_rate_limit_enforced() {
             state: Some(state_param.clone()),
             error: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await;

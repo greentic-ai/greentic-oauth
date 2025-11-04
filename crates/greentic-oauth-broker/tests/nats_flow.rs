@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use greentic_oauth_broker::{
@@ -146,7 +146,12 @@ fn build_context(
         rate_limiter,
         config_root,
         provider_catalog,
+        allow_insecure: true,
     })
+}
+
+fn config_root_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
 }
 
 #[derive(Deserialize)]
@@ -212,7 +217,7 @@ async fn nats_request_and_publish_flow() {
     let (writer, reader) = nats::connect(&options).await.unwrap();
     let publisher: SharedPublisher = Arc::new(NatsEventPublisher::new(writer.clone()));
     let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
-    let config_root = Arc::new(PathBuf::from("./configs"));
+    let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
 
     let context = build_context(
@@ -245,6 +250,7 @@ async fn nats_request_and_publish_flow() {
             state: Some(state.clone()),
             error: None,
         }),
+        HeaderMap::new(),
         State(context.clone()),
     )
     .await

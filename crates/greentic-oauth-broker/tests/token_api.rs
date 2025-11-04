@@ -135,6 +135,61 @@ async fn get_access_token_refreshes_near_expiry() {
 }
 
 #[tokio::test]
+async fn refresh_endpoint_forces_token_refresh() {
+    let temp = tempdir().expect("tempdir");
+    let (context, refresh_counter, _publisher) = build_context(temp.path().to_path_buf());
+
+    let now = current_epoch_seconds();
+    let setup = seed_token(
+        &context,
+        TokenSeed {
+            access_token: "initial-token",
+            refresh_token: Some("refresh-token-1"),
+            expires_at: now + 60,
+        },
+    );
+
+    let app = http::router(context.clone());
+    let request_body = json!({
+        "env": "prod",
+        "tenant": "acme",
+        "owner_id": "user-1"
+    })
+    .to_string();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/oauth/fake/token/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+    let expires_at = payload["expires_at"].as_u64().expect("expires_at");
+    assert!(expires_at > now + 300);
+
+    assert_eq!(*refresh_counter.lock().expect("counter lock"), 1);
+
+    let stored: StoredToken = context
+        .secrets
+        .get_json(&setup.secret_path)
+        .expect("stored token read")
+        .expect("stored token");
+    assert_eq!(stored.expires_at, Some(expires_at));
+}
+
+#[tokio::test]
 async fn signed_fetch_retries_after_unauthorized() {
     let temp = tempdir().expect("tempdir");
     let (context, refresh_counter, publisher) = build_context(temp.path().to_path_buf());
@@ -376,6 +431,7 @@ fn build_context(
         rate_limiter,
         config_root,
         provider_catalog,
+        allow_insecure: true,
     });
 
     (context, refresh_counter, publisher_impl)

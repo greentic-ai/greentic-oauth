@@ -1,7 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
-use greentic_oauth_core::{TokenHandleClaims, TokenSet, provider::Provider};
+use greentic_oauth_core::{TenantCtx, TokenHandleClaims, TokenSet, provider::Provider};
 use reqwest::{
     Client, Method, Response,
     header::{HeaderMap, HeaderName, HeaderValue},
@@ -71,6 +71,28 @@ fn now_epoch_seconds() -> u64 {
         .unwrap_or_default()
 }
 
+pub fn claims_from_connection(
+    provider: &str,
+    key: &ConnectionKey,
+    expires_at: Option<u64>,
+) -> TokenHandleClaims {
+    let issued_at = now_epoch_seconds();
+    let owner = key.owner_kind.to_owner_kind(key.owner_id.clone());
+    TokenHandleClaims {
+        provider: provider.to_string(),
+        subject: key.provider_account_id.clone(),
+        owner,
+        tenant: TenantCtx {
+            env: key.env.clone(),
+            tenant: key.tenant.clone(),
+            team: key.team.clone(),
+        },
+        scopes: Vec::new(),
+        issued_at,
+        expires_at: expires_at.unwrap_or(issued_at),
+    }
+}
+
 pub async fn resolve_access_token<S>(
     ctx: &SharedContext<S>,
     token_handle: &str,
@@ -80,6 +102,17 @@ where
     S: SecretsManager + 'static,
 {
     let claims = ctx.security.jws.verify(token_handle)?;
+    resolve_with_claims(ctx, claims, force_refresh).await
+}
+
+pub async fn resolve_with_claims<S>(
+    ctx: &SharedContext<S>,
+    claims: TokenHandleClaims,
+    force_refresh: bool,
+) -> Result<AccessTokenResponse, AppError>
+where
+    S: SecretsManager + 'static,
+{
     let mut telemetry_ctx = TelemetryTenantCtx::new(
         EnvId::from(claims.tenant.env.as_str()),
         TenantId::from(claims.tenant.tenant.as_str()),

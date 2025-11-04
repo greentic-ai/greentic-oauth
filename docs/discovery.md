@@ -553,6 +553,18 @@ let descriptor = discovery::get_descriptor(
 
 The JSON strings returned here match the HTTP payloads shown above, so digital workers can cache descriptors, verify signatures, and hydrate flow blueprints without bespoke adapters.
 
+### Microsoft Graph Scope Sets
+
+Microsoft-heavy tenants can rely on the manifest metadata to pick the correct scope bundle without memorising raw strings. The descriptor now advertises `metadata.authority_tenant` (e.g. `common`, `organizations`, or a concrete tenant ID), `metadata.resource_audience` (such as `https://graph.microsoft.com`), and a `metadata.default_scope_sets` map that groups the most common combinations:
+
+- **delegated** – baseline profile + mail/calendar access (`offline_access`, `openid`, `profile`, `User.Read`, `Mail.Read`, `Calendars.Read`).
+- **mail-read** – minimal mail ingestion (`Mail.Read`, `offline_access`).
+- **teams-collab** – lightweight Teams presence (`Channel.ReadBasic.All`, `Team.ReadBasic.All`, `offline_access`).
+- **calendar-reader** – shared calendar synchronisation (`Calendars.Read`, `offline_access`).
+- **onedrive-reader** – OneDrive/SharePoint file reading (`Files.Read.All`, `offline_access`).
+
+When an automation omits `scopes` in `oauth.start`, the broker automatically falls back to the manifest defaults so sign-in flows succeed without bespoke scope plumbing.
+
 ## Quick Reference JSON
 
 For convenience, the repository keeps copy-paste friendly fixtures under `static/examples/`:

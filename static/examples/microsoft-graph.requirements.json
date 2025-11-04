@@ -3,6 +3,25 @@
   "tenant": "acme",
   "team": "ops",
   "user": "alice@example.com",
+  "scope_presets": {
+    "calendar-reader": [
+      "Calendars.Read",
+      "offline_access"
+    ],
+    "mail-read": [
+      "Mail.Read",
+      "offline_access"
+    ],
+    "onedrive-reader": [
+      "Files.Read.All",
+      "offline_access"
+    ],
+    "teams-collab": [
+      "Channel.ReadBasic.All",
+      "Team.ReadBasic.All",
+      "offline_access"
+    ]
+  },
   "grant_paths": [
     {
       "grant_type": "authorization_code",
@@ -39,13 +58,14 @@
               "allowed_values": [
                 "offline_access",
                 "openid",
+                "profile",
                 "User.Read",
                 "Mail.Read",
                 "Calendars.Read",
                 "Mail.Send",
                 "Sites.Read.All"
               ],
-              "default": "offline_access openid User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
+              "default": "offline_access openid profile User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
             }
           ],
           "outputs": ["authorization_code"],
@@ -116,6 +136,7 @@
               "allowed_values": [
                 "offline_access",
                 "openid",
+                "profile",
                 "User.Read",
                 "Mail.Read",
                 "Calendars.Read",
@@ -158,13 +179,14 @@
               "allowed_values": [
                 "offline_access",
                 "openid",
+                "profile",
                 "User.Read",
                 "Mail.Read",
                 "Calendars.Read",
                 "Mail.Send",
                 "Sites.Read.All"
               ],
-              "default": "offline_access openid User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
+              "default": "offline_access openid profile User.Read Mail.Read Calendars.Read Mail.Send Sites.Read.All"
             }
           ],
           "outputs": ["device_code", "user_code", "verification_uri"],
@@ -207,11 +229,5 @@
     "extra": {
       "azure_tenant_id_key": "tenants/acme/oauth/msgraph/tenant_id"
     }
-  },
-  "scope_presets": {
-    "mail-read": [
-      "Mail.Read",
-      "offline_access"
-    ]
   }
 }

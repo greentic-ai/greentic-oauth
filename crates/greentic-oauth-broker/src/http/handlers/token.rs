@@ -1,14 +1,20 @@
-use axum::{Json, extract::State};
+use axum::{
+    Json,
+    extract::{Path, State},
+};
 use base64::Engine;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     http::{SharedContext, error::AppError},
-    storage::secrets_manager::SecretsManager,
+    storage::{
+        index::{ConnectionKey, OwnerKindKey},
+        secrets_manager::SecretsManager,
+    },
     tokens::{
-        AccessTokenResponse, SignedFetchOptions, SignedFetchOutcome, perform_signed_fetch,
-        resolve_access_token,
+        AccessTokenResponse, SignedFetchOptions, SignedFetchOutcome, claims_from_connection,
+        perform_signed_fetch, resolve_access_token, resolve_with_claims,
     },
 };
 
@@ -21,6 +27,31 @@ where
 {
     let response = resolve_access_token(&ctx, &request.token_handle, request.force_refresh).await?;
     Ok(Json(GetAccessTokenResponse::from(response)))
+}
+
+pub async fn refresh_token<S>(
+    Path(provider): Path<String>,
+    State(ctx): State<SharedContext<S>>,
+    Json(request): Json<RefreshTokenRequest>,
+) -> Result<Json<RefreshTokenResponse>, AppError>
+where
+    S: SecretsManager + 'static,
+{
+    let key = ConnectionKey {
+        env: request.env.clone(),
+        tenant: request.tenant.clone(),
+        team: request.team.clone(),
+        owner_kind: request.owner_kind.clone(),
+        owner_id: request.owner_id.clone(),
+        provider_account_id: request.owner_id.clone(),
+    };
+
+    let claims = claims_from_connection(&provider, &key, None);
+    let response = resolve_with_claims(&ctx, claims, true).await?;
+
+    Ok(Json(RefreshTokenResponse {
+        expires_at: response.expires_at,
+    }))
 }
 
 pub async fn signed_fetch<S>(
@@ -82,6 +113,26 @@ impl From<AccessTokenResponse> for GetAccessTokenResponse {
             expires_at: value.expires_at,
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct RefreshTokenRequest {
+    env: String,
+    tenant: String,
+    #[serde(default)]
+    team: Option<String>,
+    #[serde(default = "default_owner_kind")]
+    owner_kind: OwnerKindKey,
+    owner_id: String,
+}
+
+#[derive(Serialize)]
+pub struct RefreshTokenResponse {
+    expires_at: u64,
+}
+
+fn default_owner_kind() -> OwnerKindKey {
+    OwnerKindKey::User
 }
 
 #[derive(Deserialize)]

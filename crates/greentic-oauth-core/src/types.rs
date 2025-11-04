@@ -3,6 +3,7 @@ use std::{fmt, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 /// Stable identifier for a supported OAuth provider.
+#[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ProviderId {
     Google,

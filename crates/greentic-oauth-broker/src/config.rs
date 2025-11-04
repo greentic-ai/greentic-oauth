@@ -83,7 +83,22 @@ fn build_microsoft_from_env() -> Result<Option<MicrosoftProvider>, ConfigError> 
     let redirect_uri = env::var("MSGRAPH_REDIRECT_URI")
         .map_err(|_| ConfigError::MissingEnv("MSGRAPH_REDIRECT_URI"))?;
 
-    let provider = MicrosoftProvider::new(client_id, client_secret, tenant_mode, redirect_uri)?;
+    let default_scopes_raw = env::var("MSGRAPH_DEFAULT_SCOPES")
+        .unwrap_or_else(|_| "offline_access openid profile".into());
+    let default_scopes = parse_scopes(&default_scopes_raw);
+    let resource_audience = env::var("MSGRAPH_RESOURCE")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let provider = MicrosoftProvider::new(
+        client_id,
+        client_secret,
+        tenant_mode,
+        redirect_uri,
+        default_scopes,
+        resource_audience,
+    )?;
     Ok(Some(provider))
 }
 
@@ -100,11 +115,8 @@ fn build_generic_oidc_from_env() -> Result<Option<GenericOidcProvider>, ConfigEr
         env::var("OIDC_TOKEN_URL").map_err(|_| ConfigError::MissingEnv("OIDC_TOKEN_URL"))?;
     let redirect_uri =
         env::var("OIDC_REDIRECT_URI").map_err(|_| ConfigError::MissingEnv("OIDC_REDIRECT_URI"))?;
-    let default_scopes = env::var("OIDC_DEFAULT_SCOPES")
-        .unwrap_or_else(|_| "openid profile".to_string())
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    let default_scopes =
+        parse_scopes(&env::var("OIDC_DEFAULT_SCOPES").unwrap_or_else(|_| "openid profile".into()));
 
     let provider = GenericOidcProvider::new(
         client_id,
@@ -116,6 +128,14 @@ fn build_generic_oidc_from_env() -> Result<Option<GenericOidcProvider>, ConfigEr
     )?;
 
     Ok(Some(provider))
+}
+
+fn parse_scopes(value: &str) -> Vec<String> {
+    value
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_string())
+        .collect()
 }
 
 #[derive(Clone)]

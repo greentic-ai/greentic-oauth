@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect},
 };
 use greentic_oauth_core::types::{OwnerKind, TenantCtx as BrokerTenantCtx, TokenHandleClaims};
@@ -15,7 +15,7 @@ use serde_json::json;
 
 use crate::{
     audit::{self, AuditAttributes},
-    http::{error::AppError, state::FlowState},
+    http::{error::AppError, state::FlowState, util::ensure_secure_request},
     rate_limit,
     storage::{index::ConnectionKey, models::Connection, secrets_manager::SecretsManager},
     tokens::StoredToken,
@@ -32,11 +32,14 @@ pub struct CallbackQuery {
 
 pub async fn complete<S>(
     Query(CallbackQuery { code, state, error }): Query<CallbackQuery>,
+    headers: HeaderMap,
     State(ctx): State<SharedContext<S>>,
 ) -> Result<impl IntoResponse, AppError>
 where
     S: SecretsManager + 'static,
 {
+    ensure_secure_request(&headers, ctx.allow_insecure)?;
+
     let unknown_attrs = AuditAttributes {
         env: "unknown",
         tenant: "unknown",

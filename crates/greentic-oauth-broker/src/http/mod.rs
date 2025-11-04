@@ -46,6 +46,7 @@ where
     pub rate_limiter: Arc<RateLimiter>,
     pub config_root: Arc<PathBuf>,
     pub provider_catalog: Arc<ProviderCatalog>,
+    pub allow_insecure: bool,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;
@@ -74,6 +75,10 @@ where
         )
         .route("/token", post(handlers::token::get_access_token::<S>))
         .route("/signed-fetch", post(handlers::token::signed_fetch::<S>))
+        .route(
+            "/oauth/{provider}/token/refresh",
+            post(handlers::token::refresh_token::<S>),
+        )
         .route(
             "/oauth/discovery/providers",
             get(handlers::discovery::list_providers::<S>),

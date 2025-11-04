@@ -8,8 +8,11 @@
   "token": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
   "scopes": [
     "offline_access",
+    "openid",
+    "profile",
     "User.Read",
-    "Mail.Read"
+    "Mail.Read",
+    "Calendars.Read"
   ],
   "grant_types": [
     "authorization_code",
@@ -32,6 +35,19 @@
     "scope_presets": {
       "mail-read": [
         "Mail.Read",
+        "offline_access"
+      ],
+      "teams-collab": [
+        "Channel.ReadBasic.All",
+        "Team.ReadBasic.All",
+        "offline_access"
+      ],
+      "calendar-reader": [
+        "Calendars.Read",
+        "offline_access"
+      ],
+      "onedrive-reader": [
+        "Files.Read.All",
         "offline_access"
       ]
     }

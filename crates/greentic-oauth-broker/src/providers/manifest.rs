@@ -199,10 +199,10 @@ impl ProviderCatalog {
 }
 
 fn load_schema(path: &Path) -> Result<std::sync::Arc<Validator>, ManifestError> {
-    if let Some((cached_path, schema)) = SCHEMA_CACHE.get() {
-        if cached_path == path {
-            return Ok(std::sync::Arc::clone(schema));
-        }
+    if let Some((cached_path, schema)) = SCHEMA_CACHE.get()
+        && cached_path == path
+    {
+        return Ok(std::sync::Arc::clone(schema));
     }
 
     if !path.exists() {

@@ -19,6 +19,13 @@ impl OwnerKindKey {
             OwnerKindKey::Service => "service",
         }
     }
+
+    pub fn to_owner_kind(&self, subject: String) -> OwnerKind {
+        match self {
+            OwnerKindKey::User => OwnerKind::User { subject },
+            OwnerKindKey::Service => OwnerKind::Service { subject },
+        }
+    }
 }
 
 impl FromStr for OwnerKindKey {
@@ -132,6 +139,22 @@ impl StorageIndex {
                 .find(|entry| &entry.key == key)
                 .map(|entry| entry.connection.clone())
         })
+    }
+
+    /// Snapshot all indexed connections grouped by provider.
+    pub fn entries(&self) -> Vec<(String, ConnectionKey, Connection)> {
+        let map = self.inner.read().expect("index read lock poisoned");
+        map.iter()
+            .flat_map(|(provider, entries)| {
+                entries.iter().map(move |entry| {
+                    (
+                        provider.clone(),
+                        entry.key.clone(),
+                        entry.connection.clone(),
+                    )
+                })
+            })
+            .collect()
     }
 
     /// List all connections registered for a provider within the specified scope.

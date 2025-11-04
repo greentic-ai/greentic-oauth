@@ -10,34 +10,54 @@ use crate::security::pkce::PkcePair;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TenantMode {
-    Multi,
-    Single(String),
+    Common,
+    Organizations,
+    Consumers,
+    Tenant(String),
 }
 
 impl TenantMode {
     pub fn from_env(value: &str) -> Result<Self, ProviderError> {
-        if value == "multi" {
-            return Ok(TenantMode::Multi);
+        let trimmed = value.trim();
+        if trimmed.eq_ignore_ascii_case("multi") || trimmed.eq_ignore_ascii_case("common") {
+            return Ok(TenantMode::Common);
         }
-        if let Some(rest) = value.strip_prefix("single:") {
-            if rest.is_empty() {
+
+        if trimmed.eq_ignore_ascii_case("organizations") {
+            return Ok(TenantMode::Organizations);
+        }
+
+        if trimmed.eq_ignore_ascii_case("consumers") {
+            return Ok(TenantMode::Consumers);
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("single:") {
+            let tenant_id = rest.trim();
+            if tenant_id.is_empty() {
                 return Err(ProviderError::new(
                     ProviderErrorKind::Configuration,
                     "single tenant mode requires tenant id".to_string(),
                 ));
             }
-            return Ok(TenantMode::Single(rest.to_string()));
+            return Ok(TenantMode::Tenant(tenant_id.to_string()));
         }
+
+        if !trimmed.is_empty() {
+            return Ok(TenantMode::Tenant(trimmed.to_string()));
+        }
+
         Err(ProviderError::new(
             ProviderErrorKind::Configuration,
-            format!("unsupported tenant mode '{value}'"),
+            "tenant mode value empty".to_string(),
         ))
     }
 
     fn authority_segment(&self) -> &str {
         match self {
-            TenantMode::Multi => "common",
-            TenantMode::Single(tenant_id) => tenant_id.as_str(),
+            TenantMode::Common => "common",
+            TenantMode::Organizations => "organizations",
+            TenantMode::Consumers => "consumers",
+            TenantMode::Tenant(tenant_id) => tenant_id.as_str(),
         }
     }
 }
@@ -49,6 +69,8 @@ pub struct MicrosoftProvider {
     auth_url: String,
     token_url: String,
     redirect_uri: String,
+    default_scopes: Vec<String>,
+    resource_audience: Option<String>,
 }
 
 impl MicrosoftProvider {
@@ -57,6 +79,8 @@ impl MicrosoftProvider {
         client_secret: impl Into<String>,
         tenant_mode: TenantMode,
         redirect_uri: impl Into<String>,
+        default_scopes: Vec<String>,
+        resource_audience: Option<String>,
     ) -> Result<Self, ProviderError> {
         let client_id = client_id.into();
         let client_secret = client_secret.into();
@@ -79,6 +103,16 @@ impl MicrosoftProvider {
             .build()
             .into();
 
+        let scopes = if default_scopes.is_empty() {
+            vec![
+                "offline_access".to_string(),
+                "openid".to_string(),
+                "profile".to_string(),
+            ]
+        } else {
+            default_scopes
+        };
+
         Ok(Self {
             agent,
             client_id,
@@ -86,12 +120,32 @@ impl MicrosoftProvider {
             auth_url,
             token_url,
             redirect_uri,
+            default_scopes: scopes,
+            resource_audience: resource_audience.filter(|value| !value.trim().is_empty()),
         })
+    }
+
+    fn normalized_scopes(&self, requested: &[String]) -> Vec<String> {
+        if requested.is_empty() {
+            if !self.default_scopes.is_empty() {
+                return self.default_scopes.clone();
+            }
+            if let Some(resource) = &self.resource_audience {
+                return vec![format!("{resource}/.default")];
+            }
+            return vec![
+                "offline_access".to_string(),
+                "openid".to_string(),
+                "profile".to_string(),
+            ];
+        }
+        requested.to_vec()
     }
 
     fn build_query(
         &self,
         request: &OAuthFlowRequest,
+        scopes: &[String],
     ) -> Result<(Url, Option<String>), ProviderError> {
         let mut url = Url::parse(&self.auth_url).map_err(|err| {
             ProviderError::new(
@@ -100,7 +154,7 @@ impl MicrosoftProvider {
             )
         })?;
 
-        let scopes = request.scopes.join(" ");
+        let scope_string = scopes.join(" ");
 
         let (challenge, method, verifier) = match (
             request.code_challenge.clone(),
@@ -118,7 +172,7 @@ impl MicrosoftProvider {
             query.append_pair("client_id", &self.client_id);
             query.append_pair("response_type", "code");
             query.append_pair("redirect_uri", &request.redirect_uri);
-            query.append_pair("scope", &scopes);
+            query.append_pair("scope", &scope_string);
             query.append_pair("response_mode", "query");
             query.append_pair("code_challenge", &challenge);
             query.append_pair("code_challenge_method", &method);
@@ -131,11 +185,11 @@ impl MicrosoftProvider {
         Ok((url, verifier))
     }
 
-    fn execute_token_request(&self, params: &[(&str, &str)]) -> ProviderResult<TokenSet> {
+    fn execute_token_request(&self, params: Vec<(String, String)>) -> ProviderResult<TokenSet> {
         let mut response = self
             .agent
             .post(&self.token_url)
-            .send_form(params.iter().copied())
+            .send_form(params.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .map_err(|err| ProviderError::new(ProviderErrorKind::Transport, err.to_string()))?;
 
         let status = response.status();
@@ -179,28 +233,30 @@ impl Provider for MicrosoftProvider {
         &self,
         request: &OAuthFlowRequest,
     ) -> ProviderResult<OAuthFlowResult> {
-        let (url, _verifier) = self.build_query(request)?;
+        let scopes = self.normalized_scopes(&request.scopes);
+        let (url, _verifier) = self.build_query(request, &scopes)?;
 
         Ok(OAuthFlowResult {
             redirect_url: url.to_string(),
             state: request.state.clone(),
-            scopes: request.scopes.clone(),
+            scopes,
         })
     }
 
     fn exchange_code(&self, _claims: &TokenHandleClaims, code: &str) -> ProviderResult<TokenSet> {
-        let scope_owned = "offline_access openid profile".to_string();
+        let scope_list = self.normalized_scopes(&_claims.scopes);
+        let scope_owned = scope_list.join(" ");
         let code_owned = code.to_string();
         let params = vec![
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
-            ("grant_type", "authorization_code"),
-            ("code", code_owned.as_str()),
-            ("redirect_uri", self.redirect_uri.as_str()),
-            ("scope", scope_owned.as_str()),
+            ("client_id".to_string(), self.client_id.clone()),
+            ("client_secret".to_string(), self.client_secret.clone()),
+            ("grant_type".to_string(), "authorization_code".to_string()),
+            ("code".to_string(), code_owned),
+            ("redirect_uri".to_string(), self.redirect_uri.clone()),
+            ("scope".to_string(), scope_owned),
         ];
 
-        self.execute_token_request(&params)
+        self.execute_token_request(params)
     }
 
     fn refresh(
@@ -208,17 +264,18 @@ impl Provider for MicrosoftProvider {
         _claims: &TokenHandleClaims,
         refresh_token: &str,
     ) -> ProviderResult<TokenSet> {
-        let scope_owned = "offline_access openid profile".to_string();
+        let scope_list = self.normalized_scopes(&_claims.scopes);
+        let scope_owned = scope_list.join(" ");
         let refresh_owned = refresh_token.to_string();
         let params = vec![
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_owned.as_str()),
-            ("scope", scope_owned.as_str()),
+            ("client_id".to_string(), self.client_id.clone()),
+            ("client_secret".to_string(), self.client_secret.clone()),
+            ("grant_type".to_string(), "refresh_token".to_string()),
+            ("refresh_token".to_string(), refresh_owned),
+            ("scope".to_string(), scope_owned),
         ];
 
-        self.execute_token_request(&params)
+        self.execute_token_request(params)
     }
 
     fn revoke(&self, _claims: &TokenHandleClaims, _token: &str) -> ProviderResult<()> {
@@ -373,7 +430,7 @@ mod tests {
                 tenant: "acme".into(),
                 team: Some("platform".into()),
             },
-            scopes: vec!["User.Read".into()],
+            scopes: vec!["User.Read".into(), "offline_access".into()],
             issued_at: 1,
             expires_at: 2,
         }
@@ -391,8 +448,10 @@ mod tests {
         let provider = MicrosoftProvider::new(
             "client",
             "secret",
-            TenantMode::Multi,
+            TenantMode::Common,
             "https://app.example.com/callback",
+            vec!["offline_access".into(), "User.Read".into()],
+            None,
         )
         .expect("provider setup");
 
@@ -449,6 +508,8 @@ mod tests {
                     auth_url,
                     token_url,
                     redirect_uri: "https://app.example.com/callback".into(),
+                    default_scopes: vec!["User.Read".into(), "offline_access".into()],
+                    resource_audience: None,
                 };
                 provider.exchange_code(&sample_claims(), "authcode")
             })
@@ -508,6 +569,8 @@ mod tests {
                     auth_url,
                     token_url,
                     redirect_uri: "https://app.example.com/callback".into(),
+                    default_scopes: vec!["User.Read".into(), "offline_access".into()],
+                    resource_audience: None,
                 };
                 provider.refresh(&sample_claims(), "refresh")
             })

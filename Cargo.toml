@@ -3,12 +3,13 @@ members = [
     "crates/greentic-oauth-core",
     "crates/greentic-oauth-broker",
     "crates/greentic-oauth-sdk",
+    "examples/axum-app",
 ]
 default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 
 [workspace.dependencies]
@@ -53,3 +54,7 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 wasmtime = { version = "38", features = ["component-model"] }
 webpki-roots = "1"
+
+[patch.crates-io]
+greentic-telemetry = { git = "https://github.com/greentic-ai/greentic-telemetry", rev = "a28472304b9dda160b3e595d12aab1f7df542f7e" }
+greentic-types = { git = "https://github.com/greentic-ai/greentic-types", rev = "666d48da3ac8033b77276411ec8d7ec10a30cf40" }

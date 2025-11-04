@@ -11,6 +11,12 @@ impl AwsKmsSecretsManager {
     }
 }
 
+impl Default for AwsKmsSecretsManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecretsManager for AwsKmsSecretsManager {
     fn put_json<T: Serialize>(&self, _: &SecretPath, _: &T) -> Result<(), StorageError> {
         Err(StorageError::Unsupported(

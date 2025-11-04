@@ -28,17 +28,16 @@ where
             fs::read_dir(&providers_dir).map_err(|err| AppError::internal(err.to_string()))?;
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "yaml") {
-                if let Some(id) = path.file_stem().and_then(|s| s.to_str()) {
-                    let descriptor =
-                        load_provider_descriptor(&*ctx.config_root, id, None, None, None)
-                            .map_err(|err| AppError::internal(err.to_string()))?;
-                    for grant in descriptor.grant_types {
-                        grant_types.insert(grant);
-                    }
-                    for method in descriptor.token_endpoint_auth_methods {
-                        auth_methods.insert(method);
-                    }
+            if path.extension().is_some_and(|ext| ext == "yaml")
+                && let Some(id) = path.file_stem().and_then(|s| s.to_str())
+            {
+                let descriptor = load_provider_descriptor(&*ctx.config_root, id, None, None, None)
+                    .map_err(|err| AppError::internal(err.to_string()))?;
+                for grant in descriptor.grant_types {
+                    grant_types.insert(grant);
+                }
+                for method in descriptor.token_endpoint_auth_methods {
+                    auth_methods.insert(method);
                 }
             }
         }
