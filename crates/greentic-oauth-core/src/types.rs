@@ -136,6 +136,8 @@ pub struct TokenSet {
     pub refresh_token: Option<String>,
     pub token_type: Option<String>,
     pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_token: Option<String>,
 }
 
 /// Claims stored alongside an issued token handle.
@@ -216,6 +218,7 @@ mod tests {
             refresh_token: Some("refresh-abc".to_owned()),
             token_type: Some("Bearer".to_owned()),
             scopes: vec!["email".to_owned(), "profile".to_owned()],
+            id_token: Some("id-token-123".to_owned()),
         };
         let json = to_string(&token).expect("serialize token");
         let parsed: TokenSet = from_str(&json).expect("deserialize token");

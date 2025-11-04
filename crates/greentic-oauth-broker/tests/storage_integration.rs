@@ -18,6 +18,7 @@ fn team_shared_token_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         refresh_token: Some("refresh".into()),
         token_type: Some("Bearer".into()),
         scopes: vec!["repo".into(), "workflow".into()],
+        id_token: None,
     };
 
     manager.put_json(&token_path, &token)?;

@@ -81,6 +81,7 @@ impl FakeProvider {
                 refresh_token: Some("refresh-xyz".to_string()),
                 token_type: Some("Bearer".to_string()),
                 scopes: vec!["read".to_string(), "offline_access".to_string()],
+                id_token: None,
             },
             requests: Mutex::new(Vec::new()),
         }

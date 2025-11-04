@@ -8,6 +8,10 @@ license = "MIT"
 [features]
 default = []
 schemas = ["schemars", "serde_json"]
+dpop = []
+par = []
+jar = []
+mtls = []
 
 [dependencies]
 base64 = { workspace = true }
@@ -18,7 +22,14 @@ serde = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
+openidconnect = { version = "3.5", default-features = false, features = ["reqwest", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+time = { version = "0.3", features = ["serde"] }
+tracing = { workspace = true }
+url = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
 uuid = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
+wiremock = "0.6"

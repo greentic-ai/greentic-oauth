@@ -223,6 +223,8 @@ struct TokenEndpointResponse {
     token_type: Option<String>,
     #[serde(default)]
     scope: Option<String>,
+    #[serde(default)]
+    id_token: Option<String>,
 }
 
 impl From<TokenEndpointResponse> for TokenSet {
@@ -237,6 +239,7 @@ impl From<TokenEndpointResponse> for TokenSet {
             refresh_token: value.refresh_token,
             token_type: value.token_type,
             scopes,
+            id_token: value.id_token,
         }
     }
 }

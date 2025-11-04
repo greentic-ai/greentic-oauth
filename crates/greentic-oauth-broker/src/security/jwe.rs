@@ -132,6 +132,7 @@ mod tests {
             refresh_token: Some("refresh".into()),
             token_type: Some("Bearer".into()),
             scopes: vec!["read".into()],
+            id_token: None,
         }
     }
 

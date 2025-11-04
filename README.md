@@ -2,6 +2,24 @@
 
 Greentic OAuth stitches together the `greentic-oauth-broker`, SDKs, and worker tooling used by Greentic products to manage delegated access to third-party APIs. The broker performs OAuth handshakes, stores encrypted credentials, and exposes HTTP, NATS, WIT, and SDK contracts so other services can initiate flows, await results, and issue signed requests on behalf of tenants and teams.
 
+> **OAuth Conformance CI Incoming** — automated checks now run `cargo fmt`, `cargo clippy`, `cargo build`, and `cargo test` on every pull request so regressions are caught early.
+
+## Toolchain
+
+This workspace targets the Rust 2024 edition. Until the edition stabilises, you need the nightly toolchain:
+
+```bash
+rustup toolchain install nightly
+```
+
+The included `rust-toolchain.toml` pins CI and local commands to nightly (with `rustfmt` and `clippy` components), so `cargo …` will automatically use the correct compiler once it is installed.
+
+To mirror CI locally, run:
+
+```bash
+make check
+```
+
 ## Self-describing OAuth
 
 The broker now publishes a discovery surface so agents and digital workers can enumerate providers, inspect tenant-scoped requirements, and kick off flows without out-of-band documentation. Every discovery response is cache-friendly (`ETag`, `Cache-Control: max-age=60`) and, when configured, signed with the broker's discovery key so callers can verify integrity.

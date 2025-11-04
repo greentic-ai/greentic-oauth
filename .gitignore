@@ -1,2 +1,29 @@
+# Rust
 /target
-oauth-worker/node_modules
+**/target
+**/*.rs.bk
+
+# Cargo tooling
+/.cargo
+
+# Node / front-end artifacts
+node_modules/
+**/node_modules/
+/npm-debug.log*
+/yarn-error.log*
+
+# Environment files
+.env
+.env.*
+
+# Build outputs
+dist/
+coverage/
+
+# OS / Editor noise
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid
+docker-compose.override.yml

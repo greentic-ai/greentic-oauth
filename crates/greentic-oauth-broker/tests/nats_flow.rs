@@ -92,6 +92,7 @@ impl Provider for FakeProvider {
             refresh_token: Some("refresh-xyz".into()),
             token_type: Some("Bearer".into()),
             scopes: vec!["read".into(), "offline_access".into()],
+            id_token: None,
         })
     }
 

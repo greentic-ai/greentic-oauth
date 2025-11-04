@@ -1,3 +1,5 @@
+.PHONY: build test run fmt fmt-check clippy lint check docker
+
 build:
 	cargo build --workspace
 
@@ -10,8 +12,15 @@ run:
 fmt:
 	cargo fmt --all
 
-lint:
+fmt-check:
+	cargo fmt --all -- --check
+
+clippy:
 	cargo clippy --workspace --all-targets -- -D warnings
+
+lint: clippy
+
+check: fmt-check clippy test
 
 docker:
 	@echo "docker target not yet implemented"

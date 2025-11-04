@@ -1,6 +1,7 @@
 //! Greentic OAuth core primitives shared across services.
 
 pub mod constants;
+pub mod oidc;
 pub mod pkce;
 pub mod provider;
 pub mod state;
@@ -10,6 +11,7 @@ pub mod verifier;
 #[cfg(feature = "schemas")]
 pub mod schemas;
 
+pub use oidc::{IdClaims, OidcClient, OidcError, PkceState};
 pub use pkce::PkcePair;
 pub use provider::{Provider, ProviderError, ProviderResult};
 pub use state::{DEFAULT_STATE_TTL, StateClaims, StateError, sign_state, verify_state};

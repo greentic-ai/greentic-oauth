@@ -360,6 +360,7 @@ where
         refresh_token: seed.refresh_token.map(|s| s.to_string()),
         token_type: Some("Bearer".into()),
         scopes: vec!["read".into()],
+        id_token: None,
     };
     let ciphertext = ctx.security.jwe.encrypt(&token_set).expect("encrypt");
     let stored = StoredToken::new(ciphertext, Some(seed.expires_at));
@@ -543,6 +544,7 @@ impl Provider for TestProvider {
             refresh_token: Some(format!("refresh-token-{counter}")),
             token_type: Some("Bearer".into()),
             scopes: vec!["read".into()],
+            id_token: None,
         })
     }
 

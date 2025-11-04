@@ -4,6 +4,7 @@ members = [
     "crates/greentic-oauth-broker",
     "crates/greentic-oauth-sdk",
     "examples/axum-app",
+    "apps/oauth-testharness",
 ]
 default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
@@ -20,7 +21,7 @@ greentic-telemetry = { version = "=0.1.1", features = ["otlp-grpc", "wasm-host"]
 greentic-types = { version = "0.2", features = ["telemetry-autoinit"] }
 aes-gcm = "0.10"
 anyhow = "1"
-async-nats = "0.44"
+async-nats = "0.45"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "http1", "tokio"] }
 base64 = "0.22"
