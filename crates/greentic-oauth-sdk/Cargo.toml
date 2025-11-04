@@ -2,6 +2,8 @@
 name = "greentic-oauth-sdk"
 version.workspace = true
 edition = "2024"
+description = "Client SDK and WIT host bindings for interacting with the Greentic OAuth broker."
+license = "MIT"
 
 [features]
 default = []

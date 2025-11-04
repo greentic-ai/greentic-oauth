@@ -2,6 +2,8 @@
 name = "greentic-oauth-broker"
 version.workspace = true
 edition = "2024"
+description = "Multi-tenant OAuth broker exposing HTTP, NATS, and discovery APIs for Greentic integrations."
+license = "MIT"
 
 [features]
 default = []
