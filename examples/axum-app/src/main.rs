@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -12,8 +12,7 @@ use axum::{
 use dotenvy::dotenv;
 use greentic_oauth_core::{OwnerKind as CoreOwnerKind, TenantCtx, TokenHandleClaims};
 use greentic_oauth_sdk::{
-    FlowResult, InitiateAuthRequest, InitiateAuthResponse, OwnerKind, SignedFetchRequest,
-    SignedFetchResponse, Visibility,
+    FlowResult, InitiateAuthRequest, Method, OwnerKind, SignedFetchRequest, Visibility,
 };
 use serde::{Deserialize, Serialize};
 use tokio::signal;
@@ -80,6 +79,16 @@ struct StartOutput {
     state: String,
 }
 
+#[derive(Serialize)]
+struct FlowResultOutput {
+    flow_id: String,
+    env: String,
+    tenant: String,
+    team: Option<String>,
+    provider: String,
+    storage_path: String,
+}
+
 #[derive(Deserialize)]
 struct TokenInput {
     token_handle: String,
@@ -131,9 +140,16 @@ async fn start_oauth(
 async fn complete_oauth(
     State(state): State<AppState>,
     Query(params): Query<CallbackParams>,
-) -> Result<Json<FlowResult>, AppError> {
+) -> Result<Json<FlowResultOutput>, AppError> {
     let result = state.broker.complete_flow(params).await.map_err(AppError)?;
-    Ok(Json(result))
+    Ok(Json(FlowResultOutput {
+        flow_id: result.flow_id,
+        env: result.env,
+        tenant: result.tenant,
+        team: result.team,
+        provider: result.provider,
+        storage_path: result.storage_path,
+    }))
 }
 
 async fn exchange_token(
@@ -190,20 +206,14 @@ impl Broker for DemoBroker {
         };
 
         // Normally you would call `client.initiate_auth(request).await?`. The demo fabricates
-        // a response so the example can run without the full broker stack.
-        let response = InitiateAuthResponse {
+        // a redirect so the example can run without the full broker stack.
+        Ok(StartOutput {
             flow_id: request.flow_id.clone(),
             redirect_url: format!(
                 "https://login.example.com/oauth2/authorize?state={}",
                 request.flow_id
             ),
             state: format!("state-{}", request.flow_id),
-        };
-
-        Ok(StartOutput {
-            flow_id: response.flow_id,
-            redirect_url: response.redirect_url,
-            state: response.state,
         })
     }
 
@@ -237,8 +247,13 @@ impl Broker for DemoBroker {
 
     async fn exchange_token(&self, input: TokenInput) -> Result<TokenOutput> {
         // The real broker would POST to `/token` and decrypt the stored payload.
+        let prefix = if input.force_refresh {
+            "fresh"
+        } else {
+            "cached"
+        };
         Ok(TokenOutput {
-            access_token: format!("mock-access-token-for-{}", input.token_handle),
+            access_token: format!("{}-access-token-for-{}", prefix, input.token_handle),
             expires_at: 1_700_000_000,
         })
     }
@@ -253,17 +268,12 @@ impl Broker for DemoBroker {
             body: input.body.map(|body| body.into_bytes()),
         };
 
-        // Normally you would call `client.signed_fetch(request).await?`.
-        let response = SignedFetchResponse {
-            status: 200,
-            headers: vec![("content-type".into(), "application/json".into())],
-            body: br#"{"message":"demo payload"}"#.to_vec(),
-        };
+        let _ = request;
 
         Ok(SignedFetchOutput {
-            status: response.status,
-            headers: response.headers,
-            body: String::from_utf8(response.body)?,
+            status: 200,
+            headers: vec![("content-type".into(), "application/json".into())],
+            body: String::from_utf8(br#"{"message":"demo payload"}"#.to_vec())?,
         })
     }
 }
@@ -275,7 +285,7 @@ fn init_tracing() -> Result<()> {
         .with(LevelFilter::TRACE)
         .with(tracing_subscriber::EnvFilter::new(filter))
         .try_init()
-        .map_err(|err| anyhow!(err))?;
+        .map_err(Error::from)?;
     Ok(())
 }
 
