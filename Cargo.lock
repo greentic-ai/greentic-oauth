@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-broker"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1382,8 +1382,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
+ "anyhow",
  "base64 0.22.1",
  "jsonwebtoken",
  "openidconnect",
@@ -1404,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-sdk"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2401,7 +2402,7 @@ dependencies = [
 
 [[package]]
 name = "oauth-testharness"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "axum",
  "base64 0.22.1",

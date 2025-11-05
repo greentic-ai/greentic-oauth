@@ -25,27 +25,31 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! Revocation endpoints are optional; relative values resolve against the issuer and HTTP is
+//! permitted only for localhost during development and testing.
 
 use std::sync::Arc;
 
+use anyhow::{Error as AnyhowError, anyhow};
 use openidconnect::reqwest::async_http_client;
 use openidconnect::{
     AccessToken, AdditionalProviderMetadata, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    IssuerUrl, LogoutProviderMetadata, Nonce, ProviderMetadata, RevocationUrl,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
+    IssuerUrl, LogoutProviderMetadata, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
+    PkceCodeVerifier, ProviderMetadata, RedirectUrl, RefreshToken, RevocationUrl, Scope,
     core::{
-        CoreAuthenticationFlow, CoreAuthDisplay, CoreClaimName, CoreClaimType, CoreClient,
-        CoreClientAuthMethod, CoreGrantType, CoreIdToken, CoreIdTokenClaims,
-        CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
-        CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
-        CoreResponseType, CoreRevocableToken, CoreSubjectIdentifierType, CoreTokenResponse,
+        CoreAuthDisplay, CoreAuthenticationFlow, CoreClaimName, CoreClaimType, CoreClient,
+        CoreClientAuthMethod, CoreGrantType, CoreIdToken, CoreIdTokenClaims, CoreJsonWebKey,
+        CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
+        CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
+        CoreRevocableToken, CoreSubjectIdentifierType, CoreTokenResponse,
     },
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::instrument;
-use url::Url;
+use url::{Host, Url};
 
 use crate::{pkce::PkcePair, types::TokenSet};
 
@@ -74,6 +78,41 @@ type GreenticProviderMetadata = ProviderMetadata<
     CoreResponseType,
     CoreSubjectIdentifierType,
 >;
+
+fn resolve_endpoint(issuer: &Url, candidate: &str) -> Result<Url, AnyhowError> {
+    let trimmed = candidate.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!("endpoint value empty"));
+    }
+    if let Ok(abs) = Url::parse(trimmed) {
+        return Ok(abs);
+    }
+    issuer
+        .join(trimmed)
+        .map_err(|err| anyhow!("failed to resolve `{trimmed}` against issuer `{issuer}`: {err}"))
+}
+
+fn validate_secure_or_localhost(url: &Url) -> Result<(), AnyhowError> {
+    match url.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            if url.host().map(is_loopback_host).unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(anyhow!("insecure non-localhost URL"))
+            }
+        }
+        other => Err(anyhow!("unsupported scheme `{other}`")),
+    }
+}
+
+fn is_loopback_host(host: Host<&str>) -> bool {
+    match host {
+        Host::Domain(domain) => domain.eq_ignore_ascii_case("localhost"),
+        Host::Ipv4(addr) => addr.is_loopback(),
+        Host::Ipv6(addr) => addr.is_loopback(),
+    }
+}
 
 /// Errors returned by [`OidcClient`].
 #[derive(Debug, Error)]
@@ -278,7 +317,17 @@ impl OidcClient {
             Some("refresh_token") => CoreRevocableToken::from(RefreshToken::new(token.to_string())),
             _ => CoreRevocableToken::from(AccessToken::new(token.to_string())),
         };
-        let mut request = client.revoke_token(revocable)?;
+        let mut request = match client.revoke_token(revocable) {
+            Ok(builder) => builder,
+            Err(err) => {
+                tracing::info!(
+                    target: "oauth.oidc",
+                    error = %err,
+                    "revocation endpoint unavailable; skipping revoke"
+                );
+                return Ok(());
+            }
+        };
         if let Some(hint) = token_type_hint
             && !matches!(
                 hint_lower.as_deref(),
@@ -323,27 +372,39 @@ impl OidcClient {
             .client_id
             .clone()
             .ok_or(OidcError::MissingClientCredentials)?;
-        let client = CoreClient::from_provider_metadata(
-            (*self.metadata).clone(),
-            client_id,
-            self.client_secret.clone(),
-        );
-        let client = if let Some(revocation) = &self
+        let issuer = self.metadata.issuer().url().clone();
+        let revocation_url_opt = self
             .metadata
             .additional_metadata()
             .additional_metadata
             .revocation_endpoint
-        {
-            match Url::parse(revocation) {
-                Ok(url) => client.set_revocation_uri(RevocationUrl::from_url(url)),
-                Err(err) => {
-                    tracing::warn!(target: "oauth.oidc", revocation, error = %err, "ignoring invalid revocation endpoint");
-                    client
+            .as_deref()
+            .and_then(|raw| {
+                match resolve_endpoint(&issuer, raw).and_then(|resolved| {
+                    validate_secure_or_localhost(&resolved)?;
+                    Ok(resolved)
+                }) {
+                    Ok(url) => Some(RevocationUrl::from_url(url)),
+                    Err(err) => {
+                        tracing::warn!(
+                            target: "oauth.oidc",
+                            raw,
+                            error = %err,
+                            "skipping revocation endpoint"
+                        );
+                        None
+                    }
                 }
-            }
-        } else {
-            client
-        };
+            });
+
+        let mut client = CoreClient::from_provider_metadata(
+            (*self.metadata).clone(),
+            client_id,
+            self.client_secret.clone(),
+        );
+        if let Some(revocation_url) = revocation_url_opt {
+            client = client.set_revocation_uri(revocation_url);
+        }
         Ok(client)
     }
 
@@ -472,15 +533,7 @@ mod tests {
             return;
         };
         let issuer_base = server.uri();
-        let metadata = provider_metadata(&issuer_base);
-        assert!(
-            metadata
-                .additional_metadata()
-                .additional_metadata
-                .revocation_endpoint
-                .is_some(),
-            "test metadata missing revocation endpoint"
-        );
+        let metadata = provider_metadata(&issuer_base, Some("revoke"));
         let jwks = sample_jwks();
 
         let mut client = OidcClient::test_new(metadata, jwks);
@@ -511,7 +564,7 @@ mod tests {
             .await;
 
         Mock::given(method("POST"))
-            .and(path("/oauth2/revoke"))
+            .and(path("/revoke"))
             .respond_with(ResponseTemplate::new(200))
             .mount(&server)
             .await;
@@ -537,13 +590,12 @@ mod tests {
             .expect("revoke");
     }
 
-    fn provider_metadata(base: &str) -> GreenticProviderMetadata {
+    fn provider_metadata(base: &str, revocation: Option<&str>) -> GreenticProviderMetadata {
         let trimmed = base.trim_end_matches('/');
         let issuer = format!("{trimmed}/");
         let auth = format!("{trimmed}/oauth2/auth");
         let token = format!("{trimmed}/oauth2/token");
         let jwks = format!("{trimmed}/oauth2/jwks");
-        let revocation = format!("{trimmed}/oauth2/revoke");
         let end_session = format!("{trimmed}/logout");
 
         serde_json::from_value(json!({
@@ -556,7 +608,7 @@ mod tests {
             "id_token_signing_alg_values_supported": ["RS256"],
             "scopes_supported": ["openid", "email", "profile"],
             "token_endpoint_auth_methods_supported": ["client_secret_basic"],
-            "revocation_endpoint": revocation,
+            "revocation_endpoint": revocation.map(|value| value.to_string()),
             "end_session_endpoint": end_session
         }))
         .expect("metadata")
@@ -572,7 +624,10 @@ mod tests {
 
     #[test]
     fn pkce_state_contains_secrets() {
-        let metadata = provider_metadata("https://example.com");
+        let metadata = provider_metadata(
+            "https://example.com",
+            Some("https://example.com/oauth/revoke"),
+        );
         let jwks = sample_jwks();
         let client = OidcClient::test_new(metadata, jwks);
         let mut client = client;
@@ -587,5 +642,73 @@ mod tests {
         assert!(!pkce.verifier_secret().is_empty());
         assert!(!pkce.csrf_token().is_empty());
         assert!(!pkce.nonce().is_empty());
+    }
+
+    #[test]
+    fn relative_revocation_is_resolved() {
+        let issuer = Url::parse("http://127.0.0.1:4444/").expect("issuer url");
+        let resolved = resolve_endpoint(&issuer, "revocation").expect("resolved url");
+        assert_eq!(resolved.as_str(), "http://127.0.0.1:4444/revocation");
+        validate_secure_or_localhost(&resolved).expect("localhost http allowed");
+    }
+
+    #[test]
+    fn https_revocation_is_accepted() {
+        let issuer = Url::parse("https://auth.example.com/").expect("issuer url");
+        let resolved =
+            resolve_endpoint(&issuer, "https://auth.example.com/oauth/revoke").expect("resolved");
+        assert_eq!(resolved.as_str(), "https://auth.example.com/oauth/revoke");
+        validate_secure_or_localhost(&resolved).expect("https allowed");
+    }
+
+    #[test]
+    fn http_localhost_is_allowed() {
+        let issuer = Url::parse("http://localhost:8080/").expect("issuer url");
+        let resolved = resolve_endpoint(&issuer, "http://localhost:8080/revoke").expect("resolved");
+        validate_secure_or_localhost(&resolved).expect("localhost http allowed");
+    }
+
+    #[test]
+    fn http_non_localhost_is_rejected_and_skipped() {
+        let issuer = Url::parse("https://idp.example.com/").expect("issuer url");
+        let resolved =
+            resolve_endpoint(&issuer, "http://auth.example.com/revoke").expect("resolved");
+        assert!(
+            validate_secure_or_localhost(&resolved).is_err(),
+            "non-localhost http should be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_revocation_is_skipped() {
+        let issuer = Url::parse("https://auth.example.com/").expect("issuer url");
+        assert!(
+            resolve_endpoint(&issuer, "").is_err(),
+            "empty endpoint should be rejected"
+        );
+        let metadata = provider_metadata("https://auth.example.com", Some(""));
+        let jwks = sample_jwks();
+        let mut client = OidcClient::test_new(metadata, jwks);
+        client
+            .set_client_credentials("client", Some("secret".into()))
+            .expect("credentials");
+        client
+            .revoke("refresh-token", Some("refresh_token"))
+            .await
+            .expect("invalid endpoint should be skipped without error");
+    }
+
+    #[tokio::test]
+    async fn revoke_path_does_not_panic_when_missing() {
+        let metadata = provider_metadata("https://auth.example.com", None);
+        let jwks = sample_jwks();
+        let mut client = OidcClient::test_new(metadata, jwks);
+        client
+            .set_client_credentials("client", Some("secret".into()))
+            .expect("credentials");
+        client
+            .revoke("refresh-token", Some("refresh_token"))
+            .await
+            .expect("revoke without endpoint should succeed");
     }
 }

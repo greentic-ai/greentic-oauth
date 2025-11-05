@@ -284,8 +284,8 @@ mod tests {
             path: &'static str,
             response_body: serde_json::Value,
         ) -> Result<Self, std::io::Error> {
-            let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-                .await?;
+            let listener =
+                tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
             let addr = listener.local_addr()?;
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
             let requests = Arc::new(Mutex::new(Vec::new()));
