@@ -60,6 +60,28 @@ Additional behaviours:
 
 - `/start` and `/callback` enforce in-memory rate limiting (`RateLimiter`) keyed by `{env,tenant,team?,provider}`.
 - Errors such as missing/invalid state, provider failures, or rate limits emit structured audit events (`oauth.audit.*`) before returning `4xx/5xx`.
+- Optional test-only helpers (`/_test/refresh`, `/_test/signed-fetch`) can be enabled via `--enable-test-endpoints` or `OAUTH_ENABLE_TEST_ENDPOINTS=true`. They proxy refresh grants and simple bearer requests for local conformance tooling and should remain disabled in production.
+
+## Live OAuth Conformance
+
+The `conformance_live` example exercises real providers without browser interaction to validate discovery, JWKS, client credentials, refresh grants, revocation, and a basic bearer API call. Interactive flows (authorization code + PKCE) remain the domain of `apps/oauth-testharness` and are intentionally excluded from CI.
+
+To run against an OIDC provider locally:
+
+```bash
+export OIDC_ISSUER=https://auth.example.com/realms/ci
+export OIDC_CLIENT_ID=your-client-id
+export OIDC_CLIENT_SECRET=your-client-secret
+export OIDC_REFRESH_TOKEN_SEEDED=optional-seeded-refresh
+export OIDC_AUDIENCE=optional-audience
+cargo run -p greentic-oauth-broker --example conformance_live -- \
+  --provider oidc \
+  --checks discovery,jwks,client_credentials,signed_fetch,refresh,revocation
+```
+
+For Microsoft Graph set `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, and optionally `MS_REFRESH_TOKEN_SEEDED`, then run with `--provider msgraph`.
+
+Seeded refresh tokens make it possible to exercise refresh/rotation in CI. Generate one via an auth-code flow (for example with `apps/oauth-testharness`) and store it as `*_REFRESH_TOKEN_SEEDED` in the `live-oauth` environment. The runner logs and skips refresh or revocation checks when endpoints are absent/invalid or when no seeded token is configured—revocation is always best-effort and should not fail the suite.
 
 ## NATS Contract
 

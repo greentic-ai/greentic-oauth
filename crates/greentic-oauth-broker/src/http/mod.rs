@@ -47,6 +47,7 @@ where
     pub config_root: Arc<PathBuf>,
     pub provider_catalog: Arc<ProviderCatalog>,
     pub allow_insecure: bool,
+    pub enable_test_endpoints: bool,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;
@@ -55,7 +56,7 @@ pub fn router<S>(context: SharedContext<S>) -> Router
 where
     S: SecretsManager + 'static,
 {
-    Router::new()
+    let mut router = Router::new()
         .route(
             "/.well-known/greentic-oauth",
             get(handlers::well_known::document::<S>),
@@ -108,8 +109,17 @@ where
                 .on_request(DefaultOnRequest::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
-        .layer(HttpMetricsLayer::new())
-        .with_state(context)
+        .layer(HttpMetricsLayer::new());
+
+    if context.enable_test_endpoints {
+        router = router.route("/_test/refresh", post(handlers::test::refresh_grant::<S>));
+        router = router.route(
+            "/_test/signed-fetch",
+            post(handlers::test::signed_fetch::<S>),
+        );
+    }
+
+    router.with_state(context)
 }
 
 static HTTP_REQUESTS_TOTAL: Lazy<metrics::Counter> =

@@ -92,6 +92,7 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         config_root,
         provider_catalog,
         allow_insecure: true,
+        enable_test_endpoints: false,
     })
 }
 

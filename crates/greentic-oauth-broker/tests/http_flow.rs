@@ -6,15 +6,17 @@ use std::{
 };
 
 use async_trait::async_trait;
+use axum::body::Body;
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
 };
+use hyper::{Method, Request};
 
 use greentic_oauth_broker::{
     config::{ProviderRegistry, RedirectGuard},
-    events::{EventPublisher, PublishError, SharedPublisher},
+    events::{EventPublisher, NoopPublisher, PublishError, SharedPublisher},
     http::{
         AppContext, SharedContext,
         handlers::{
@@ -37,6 +39,7 @@ use greentic_oauth_core::{
 };
 use serde::Deserialize;
 use tempfile::tempdir;
+use tower::ServiceExt;
 use url::Url;
 
 fn config_root_path() -> PathBuf {
@@ -180,6 +183,7 @@ fn build_context(
     config_root: Arc<PathBuf>,
     provider_catalog: Arc<ProviderCatalog>,
     allow_insecure: bool,
+    enable_test_endpoints: bool,
 ) -> SharedContext<EnvSecretsManager> {
     Arc::new(AppContext {
         providers: provider_registry,
@@ -192,6 +196,7 @@ fn build_context(
         config_root,
         provider_catalog,
         allow_insecure,
+        enable_test_endpoints,
     })
 }
 
@@ -226,6 +231,7 @@ async fn start_to_callback_happy_path() {
         config_root.clone(),
         provider_catalog.clone(),
         true,
+        false,
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -412,6 +418,7 @@ async fn callback_state_validation_failure() {
         config_root.clone(),
         provider_catalog,
         true,
+        false,
     );
 
     let response = callback::complete::<EnvSecretsManager>(
@@ -470,6 +477,7 @@ async fn start_populates_scopes_from_manifest_when_missing() {
         config_root.clone(),
         provider_catalog.clone(),
         true,
+        false,
     );
 
     initiate::start::<EnvSecretsManager>(
@@ -534,6 +542,7 @@ async fn start_rate_limit_enforced() {
         config_root.clone(),
         provider_catalog,
         true,
+        false,
     );
 
     initiate::start::<EnvSecretsManager>(
@@ -626,6 +635,7 @@ async fn start_rejects_insecure_without_forwarded_proto() {
         config_root.clone(),
         provider_catalog,
         false,
+        false,
     );
 
     let insecure = initiate::start::<EnvSecretsManager>(
@@ -709,6 +719,7 @@ async fn callback_rate_limit_enforced() {
         config_root.clone(),
         provider_catalog.clone(),
         true,
+        false,
     );
 
     let start_response = initiate::start::<EnvSecretsManager>(
@@ -788,4 +799,104 @@ async fn callback_rate_limit_enforced() {
                     .unwrap_or(false)),
         "expected callback_error audit event with rate_limited reason"
     );
+}
+
+#[tokio::test]
+async fn test_endpoints_disabled_return_404() {
+    let temp = tempdir().expect("tempdir");
+    let secrets_dir = temp.path().to_path_buf();
+    let context = build_context(
+        Arc::new(ProviderRegistry::new()),
+        Arc::new(security_config()),
+        Arc::new(EnvSecretsManager::new(secrets_dir.join("secrets")).unwrap()),
+        Arc::new(StorageIndex::new()),
+        Arc::new(RedirectGuard::from_env().unwrap()),
+        Arc::new(NoopPublisher),
+        Arc::new(RateLimiter::new(60, Duration::from_secs(60))),
+        Arc::new(config_root_path()),
+        Arc::new(ProviderCatalog::load(&config_root_path().join("providers")).unwrap()),
+        true,
+        false,
+    );
+    let router = greentic_oauth_broker::http::router(context);
+    let response = router
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/_test/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from("{}"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_endpoints_refresh_and_signed_fetch() {
+    let mut registry = ProviderRegistry::new();
+    registry.insert(
+        "fake".to_string(),
+        Arc::new(FakeProvider::new()) as Arc<dyn Provider>,
+    );
+
+    let temp = tempdir().expect("tempdir");
+    let secrets_dir = temp.path().to_path_buf();
+    let context = build_context(
+        Arc::new(registry),
+        Arc::new(security_config()),
+        Arc::new(EnvSecretsManager::new(secrets_dir.join("secrets")).unwrap()),
+        Arc::new(StorageIndex::new()),
+        Arc::new(RedirectGuard::from_env().unwrap()),
+        Arc::new(NoopPublisher),
+        Arc::new(RateLimiter::new(60, Duration::from_secs(60))),
+        Arc::new(config_root_path()),
+        Arc::new(ProviderCatalog::load(&config_root_path().join("providers")).unwrap()),
+        true,
+        true,
+    );
+
+    let router = greentic_oauth_broker::http::router(context);
+
+    let refresh_response = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/_test/refresh")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "provider": "fake",
+                        "client_id": "client",
+                        "client_secret": "secret",
+                        "refresh_token": "seed"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(refresh_response.status(), StatusCode::NOT_FOUND);
+
+    let fetch_response = router
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/_test/signed-fetch")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "access_token": "ignored",
+                        "url": "https://example.com/resource"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_ne!(fetch_response.status(), StatusCode::NOT_FOUND);
 }

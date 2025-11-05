@@ -433,6 +433,7 @@ fn build_context(
         config_root,
         provider_catalog,
         allow_insecure: true,
+        enable_test_endpoints: false,
     });
 
     (context, refresh_counter, publisher_impl)

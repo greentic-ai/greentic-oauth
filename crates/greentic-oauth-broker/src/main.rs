@@ -27,6 +27,9 @@ async fn bootstrap() -> Result<()> {
 }
 
 async fn run() -> Result<()> {
+    let enable_test_flag = std::env::args()
+        .skip(1)
+        .any(|arg| arg == "--enable-test-endpoints");
     let providers = Arc::new(ProviderRegistry::from_env()?);
     let security = Arc::new(SecurityConfig::from_env()?);
     let secrets_dir =
@@ -78,6 +81,11 @@ async fn run() -> Result<()> {
         .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
         .unwrap_or(false);
 
+    let enable_test_endpoints = enable_test_flag
+        || std::env::var("OAUTH_ENABLE_TEST_ENDPOINTS")
+            .ok()
+            .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
+            .unwrap_or(false);
     let context = http::AppContext {
         providers,
         security,
@@ -89,6 +97,7 @@ async fn run() -> Result<()> {
         config_root: config_root.clone(),
         provider_catalog,
         allow_insecure,
+        enable_test_endpoints,
     };
     let shared_context = Arc::new(context);
 

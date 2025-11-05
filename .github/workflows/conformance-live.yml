@@ -1,0 +1,59 @@
+name: Conformance — Live OAuth
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  live-oauth:
+    name: Live OAuth (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    environment: live-oauth
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [msgraph, oidc]
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --all-features
+
+      - name: Run conformance (msgraph)
+        if: matrix.provider == 'msgraph'
+        env:
+          RUST_LOG: info
+          MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
+          MS_CLIENT_SECRET: ${{ secrets.MS_CLIENT_SECRET }}
+          MS_REFRESH_TOKEN_SEEDED: ${{ secrets.MS_REFRESH_TOKEN_SEEDED }}
+        run: |
+          cargo run -p greentic-oauth-broker --example conformance_live -- \
+            --provider msgraph \
+            --checks discovery,jwks,client_credentials,signed_fetch,refresh,revocation
+
+      - name: Run conformance (oidc)
+        if: matrix.provider == 'oidc'
+        env:
+          RUST_LOG: info
+          OIDC_ISSUER: ${{ secrets.OIDC_ISSUER }}
+          OIDC_CLIENT_ID: ${{ secrets.OIDC_CLIENT_ID }}
+          OIDC_CLIENT_SECRET: ${{ secrets.OIDC_CLIENT_SECRET }}
+          OIDC_REFRESH_TOKEN_SEEDED: ${{ secrets.OIDC_REFRESH_TOKEN_SEEDED }}
+          OIDC_AUDIENCE: ${{ secrets.OIDC_AUDIENCE }}
+        run: |
+          cargo run -p greentic-oauth-broker --example conformance_live -- \
+            --provider oidc \
+            --checks discovery,jwks,client_credentials,signed_fetch,refresh,revocation
