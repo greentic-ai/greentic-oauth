@@ -53,10 +53,10 @@ where
         ("client_secret", payload.client_secret.as_str()),
         ("refresh_token", payload.refresh_token.as_str()),
     ];
-    if let Some(scope) = payload.scope.as_deref() {
-        if !scope.is_empty() {
-            form.push(("scope", scope));
-        }
+    if let Some(scope) = payload.scope.as_deref()
+        && !scope.is_empty()
+    {
+        form.push(("scope", scope));
     }
 
     let client = reqwest::Client::new();
