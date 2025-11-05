@@ -28,14 +28,17 @@
 
 use std::sync::Arc;
 
-use openidconnect::ProviderMetadataWithLogout;
 use openidconnect::reqwest::async_http_client;
 use openidconnect::{
-    AccessToken, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
+    AccessToken, AdditionalProviderMetadata, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    IssuerUrl, LogoutProviderMetadata, Nonce, ProviderMetadata, RevocationUrl,
     OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
     core::{
-        CoreAuthenticationFlow, CoreClient, CoreIdToken, CoreIdTokenClaims, CoreRevocableToken,
-        CoreTokenResponse,
+        CoreAuthenticationFlow, CoreAuthDisplay, CoreClaimName, CoreClaimType, CoreClient,
+        CoreClientAuthMethod, CoreGrantType, CoreIdToken, CoreIdTokenClaims,
+        CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
+        CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
+        CoreResponseType, CoreRevocableToken, CoreSubjectIdentifierType, CoreTokenResponse,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -45,6 +48,32 @@ use tracing::instrument;
 use url::Url;
 
 use crate::{pkce::PkcePair, types::TokenSet};
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+struct GreenticAdditionalMetadata {
+    #[serde(default)]
+    revocation_endpoint: Option<String>,
+}
+
+impl AdditionalProviderMetadata for GreenticAdditionalMetadata {}
+
+type GreenticProviderMetadata = ProviderMetadata<
+    LogoutProviderMetadata<GreenticAdditionalMetadata>,
+    CoreAuthDisplay,
+    CoreClientAuthMethod,
+    CoreClaimName,
+    CoreClaimType,
+    CoreGrantType,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJweKeyManagementAlgorithm,
+    CoreJwsSigningAlgorithm,
+    CoreJsonWebKeyType,
+    CoreJsonWebKeyUse,
+    CoreJsonWebKey,
+    CoreResponseMode,
+    CoreResponseType,
+    CoreSubjectIdentifierType,
+>;
 
 /// Errors returned by [`OidcClient`].
 #[derive(Debug, Error)]
@@ -116,7 +145,7 @@ impl PkceState {
 /// Thin wrapper around OpenID Connect provider discovery and RP interactions.
 #[derive(Clone)]
 pub struct OidcClient {
-    metadata: Arc<ProviderMetadataWithLogout>,
+    metadata: Arc<GreenticProviderMetadata>,
     client_id: Option<ClientId>,
     client_secret: Option<ClientSecret>,
 }
@@ -127,8 +156,8 @@ impl OidcClient {
     pub async fn discover(issuer: &Url) -> Result<Self, OidcError> {
         let issuer_url = IssuerUrl::from_url(issuer.clone());
 
-        let metadata: ProviderMetadataWithLogout =
-            ProviderMetadataWithLogout::discover_async(issuer_url.clone(), async_http_client)
+        let metadata: GreenticProviderMetadata =
+            GreenticProviderMetadata::discover_async(issuer_url.clone(), async_http_client)
                 .await
                 .map_err(|err| OidcError::Other(err.to_string()))?;
         Ok(Self {
@@ -299,12 +328,28 @@ impl OidcClient {
             client_id,
             self.client_secret.clone(),
         );
+        let client = if let Some(revocation) = &self
+            .metadata
+            .additional_metadata()
+            .additional_metadata
+            .revocation_endpoint
+        {
+            match Url::parse(revocation) {
+                Ok(url) => client.set_revocation_uri(RevocationUrl::from_url(url)),
+                Err(err) => {
+                    tracing::warn!(target: "oauth.oidc", revocation, error = %err, "ignoring invalid revocation endpoint");
+                    client
+                }
+            }
+        } else {
+            client
+        };
         Ok(client)
     }
 
     #[cfg(test)]
     fn test_new(
-        mut metadata: ProviderMetadataWithLogout,
+        mut metadata: GreenticProviderMetadata,
         jwks: openidconnect::core::CoreJsonWebKeySet,
     ) -> Self {
         metadata = metadata.set_jwks(jwks);
@@ -386,12 +431,14 @@ mod tests {
             return;
         };
         let issuer = server.uri();
+        let issuer_root = issuer.trim_end_matches('/');
+        let issuer_with_trailing = format!("{issuer_root}/");
 
         let discovery_body = json!({
-            "issuer": issuer,
-            "authorization_endpoint": format!("{}/oauth2/auth", issuer),
-            "token_endpoint": format!("{}/oauth2/token", issuer),
-            "jwks_uri": format!("{}/oauth2/jwks", issuer),
+            "issuer": issuer_with_trailing,
+            "authorization_endpoint": format!("{}/oauth2/auth", issuer_root),
+            "token_endpoint": format!("{}/oauth2/token", issuer_root),
+            "jwks_uri": format!("{}/oauth2/jwks", issuer_root),
             "response_types_supported": ["code"],
             "subject_types_supported": ["public"],
             "id_token_signing_alg_values_supported": ["RS256"]
@@ -411,7 +458,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let issuer = Url::parse(&issuer).expect("issuer url");
+        let issuer = Url::parse(&issuer_with_trailing).expect("issuer url");
         let client = OidcClient::discover(&issuer).await.expect("discover");
 
         assert_eq!(client.metadata.issuer().as_str(), issuer.as_str());
@@ -426,6 +473,14 @@ mod tests {
         };
         let issuer_base = server.uri();
         let metadata = provider_metadata(&issuer_base);
+        assert!(
+            metadata
+                .additional_metadata()
+                .additional_metadata
+                .revocation_endpoint
+                .is_some(),
+            "test metadata missing revocation endpoint"
+        );
         let jwks = sample_jwks();
 
         let mut client = OidcClient::test_new(metadata, jwks);
@@ -482,15 +537,17 @@ mod tests {
             .expect("revoke");
     }
 
-    fn provider_metadata(base: &str) -> ProviderMetadataWithLogout {
-        let auth = format!("{base}/oauth2/auth");
-        let token = format!("{base}/oauth2/token");
-        let jwks = format!("{base}/oauth2/jwks");
-        let revocation = format!("{base}/oauth2/revoke");
-        let end_session = format!("{base}/logout");
+    fn provider_metadata(base: &str) -> GreenticProviderMetadata {
+        let trimmed = base.trim_end_matches('/');
+        let issuer = format!("{trimmed}/");
+        let auth = format!("{trimmed}/oauth2/auth");
+        let token = format!("{trimmed}/oauth2/token");
+        let jwks = format!("{trimmed}/oauth2/jwks");
+        let revocation = format!("{trimmed}/oauth2/revoke");
+        let end_session = format!("{trimmed}/logout");
 
         serde_json::from_value(json!({
-            "issuer": base,
+            "issuer": issuer,
             "authorization_endpoint": auth,
             "token_endpoint": token,
             "jwks_uri": jwks,
