@@ -2,6 +2,8 @@
 name = "oauth-testharness"
 version.workspace = true
 edition.workspace = true
+description = "Local test harness for exercising Greentic OAuth flows."
+license = "MIT"
 
 [dependencies]
 axum = { workspace = true }
