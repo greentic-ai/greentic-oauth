@@ -6,16 +6,14 @@ use axum::{
     response::{IntoResponse, Redirect},
 };
 use greentic_oauth_core::types::{OwnerKind, TenantCtx as BrokerTenantCtx, TokenHandleClaims};
-use greentic_types::{
-    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, UserId,
-    telemetry::set_current_tenant_ctx,
-};
+use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
     audit::{self, AuditAttributes},
     http::{error::AppError, state::FlowState, util::ensure_secure_request},
+    ids::{parse_env_id, parse_team_id, parse_tenant_id, parse_user_id},
     rate_limit,
     storage::{index::ConnectionKey, models::Connection, secrets_manager::SecretsManager},
     tokens::StoredToken,
@@ -102,15 +100,15 @@ where
     };
 
     let mut telemetry_ctx = TelemetryTenantCtx::new(
-        EnvId::from(flow_state.env.as_str()),
-        TenantId::from(flow_state.tenant.as_str()),
+        parse_env_id(flow_state.env.as_str())?,
+        parse_tenant_id(flow_state.tenant.as_str())?,
     )
     .with_flow(flow_state.flow_id.clone())
     .with_provider(flow_state.provider.clone())
-    .with_user(Some(UserId::from(flow_state.owner_id.as_str())));
+    .with_user(Some(parse_user_id(flow_state.owner_id.as_str())?));
 
     if let Some(team) = flow_state.team.as_ref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team.as_str())));
+        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team.as_str())?));
     }
 
     set_current_tenant_ctx(&telemetry_ctx);

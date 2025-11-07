@@ -17,11 +17,15 @@ use axum::{
     Router,
     routing::{get, post},
 };
-use greentic_telemetry::metrics;
+use greentic_telemetry::{TelemetryCtx, with_current_telemetry_ctx};
 use once_cell::sync::Lazy;
+use opentelemetry::metrics::{Counter as OtelCounter, Histogram as OtelHistogram};
+use opentelemetry::{KeyValue, global};
+use opentelemetry::trace::TraceContextExt;
 use tower::{Layer, Service};
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
-use tracing::Level;
+use tracing::{Level, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{
     config::{ProviderRegistry, RedirectGuard},
@@ -122,12 +126,12 @@ where
     router.with_state(context)
 }
 
-static HTTP_REQUESTS_TOTAL: Lazy<metrics::Counter> =
-    Lazy::new(|| metrics::counter("oauth_http_requests_total"));
-static HTTP_ERRORS_TOTAL: Lazy<metrics::Counter> =
-    Lazy::new(|| metrics::counter("oauth_http_errors_total"));
-static HTTP_LATENCY_MS: Lazy<metrics::Histogram> =
-    Lazy::new(|| metrics::histogram("oauth_http_latency_ms"));
+static HTTP_REQUESTS_TOTAL: Lazy<MetricCounter> =
+    Lazy::new(|| MetricCounter::new("oauth_http_requests_total"));
+static HTTP_ERRORS_TOTAL: Lazy<MetricCounter> =
+    Lazy::new(|| MetricCounter::new("oauth_http_errors_total"));
+static HTTP_LATENCY_MS: Lazy<MetricHistogram> =
+    Lazy::new(|| MetricHistogram::new("oauth_http_latency_ms"));
 
 #[derive(Clone, Default)]
 struct HttpMetricsLayer;
@@ -190,4 +194,65 @@ where
             }
         })
     }
+}
+
+#[derive(Clone)]
+struct MetricCounter {
+    inner: OtelCounter<f64>,
+}
+
+impl MetricCounter {
+    fn new(name: &'static str) -> Self {
+        let meter = global::meter("greentic-oauth-broker");
+        Self {
+            inner: meter.f64_counter(name).build(),
+        }
+    }
+
+    fn add(&self, value: f64) {
+        self.inner.add(value, &telemetry_attributes());
+    }
+}
+
+#[derive(Clone)]
+struct MetricHistogram {
+    inner: OtelHistogram<f64>,
+}
+
+impl MetricHistogram {
+    fn new(name: &'static str) -> Self {
+        let meter = global::meter("greentic-oauth-broker");
+        Self {
+            inner: meter.f64_histogram(name).build(),
+        }
+    }
+
+    fn record(&self, value: f64) {
+        self.inner.record(value, &telemetry_attributes());
+    }
+}
+
+fn telemetry_attributes() -> Vec<KeyValue> {
+    let mut attrs = Vec::new();
+
+    if let Some(ctx) = current_task_telemetry() {
+        for (key, value) in ctx.kv() {
+            if let Some(value) = value {
+                attrs.push(KeyValue::new(key, value.to_string()));
+            }
+        }
+    }
+
+    let span = Span::current();
+    let span_ctx = span.context().span().span_context().clone();
+    if span_ctx.is_valid() {
+        attrs.push(KeyValue::new("trace_id", span_ctx.trace_id().to_string()));
+        attrs.push(KeyValue::new("span_id", span_ctx.span_id().to_string()));
+    }
+
+    attrs
+}
+
+fn current_task_telemetry() -> Option<TelemetryCtx> {
+    with_current_telemetry_ctx(|ctx| ctx.cloned())
 }

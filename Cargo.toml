@@ -10,15 +10,17 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.4"
+version = "0.3.0"
 edition = "2024"
 
 [workspace.dependencies]
-greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.2" }
-greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.2" }
-greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.2" }
-greentic-telemetry = { version = "=0.1.1", features = ["otlp-grpc", "wasm-host"] }
-greentic-types = { version = "0.2", features = ["telemetry-autoinit"] }
+greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.3" }
+greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.3" }
+greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.3" }
+greentic-telemetry = { version = "0.3" }
+greentic-types = { version = "0.3", features = ["telemetry-autoinit"] }
+opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
+tracing-opentelemetry = "0.32"
 aes-gcm = "0.10"
 anyhow = "1"
 async-nats = "0.45"
@@ -55,7 +57,3 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 wasmtime = { version = "38", features = ["component-model"] }
 webpki-roots = "1"
-
-[patch.crates-io]
-greentic-telemetry = { git = "https://github.com/greentic-ai/greentic-telemetry", rev = "a28472304b9dda160b3e595d12aab1f7df542f7e" }
-greentic-types = { git = "https://github.com/greentic-ai/greentic-types", rev = "666d48da3ac8033b77276411ec8d7ec10a30cf40" }

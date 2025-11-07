@@ -383,9 +383,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.44"
+version = "1.2.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37521ac7aabe3d13122dc382493e20c9416f299d2ccd5b3a5340a2570cdeb0f3"
+checksum = "35900b6c8d709fb1d854671ae27aeaa9eec2f8b01b364e1619a40da3e6fe2afe"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -465,18 +465,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror 2.0.17",
-]
-
-[[package]]
-name = "const-hex"
-version = "1.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bb320cac8a0750d7f25280aa97b09c26edfe161164238ecbbb31092b079e735"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "proptest",
- "serde_core",
 ]
 
 [[package]]
@@ -1342,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-broker"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1351,13 +1339,14 @@ dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
  "greentic-oauth-core",
- "greentic-telemetry 0.1.1",
+ "greentic-telemetry 0.3.0",
  "greentic-types",
  "hmac",
  "http-body-util",
  "hyper 1.7.0",
  "jsonschema",
  "once_cell",
+ "opentelemetry",
  "p256",
  "rand 0.9.2",
  "reqwest 0.12.24",
@@ -1373,6 +1362,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "ureq",
  "url",
@@ -1382,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-core"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1390,7 +1380,7 @@ dependencies = [
  "openidconnect",
  "rand 0.9.2",
  "reqwest 0.12.24",
- "schemars 1.0.5",
+ "schemars 1.1.0",
  "serde",
  "serde_json",
  "sha2",
@@ -1405,7 +1395,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-sdk"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1421,25 +1411,6 @@ dependencies = [
  "url",
  "uuid",
  "wasmtime",
-]
-
-[[package]]
-name = "greentic-telemetry"
-version = "0.1.1"
-source = "git+https://github.com/greentic-ai/greentic-telemetry?rev=a28472304b9dda160b3e595d12aab1f7df542f7e#a28472304b9dda160b3e595d12aab1f7df542f7e"
-dependencies = [
- "anyhow",
- "once_cell",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "regex",
- "serde",
- "tonic",
- "tracing",
- "tracing-log",
- "tracing-opentelemetry",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1460,9 +1431,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-telemetry"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb74bb743d8fe02d2031777f154bcc007fcfbf6f3eaaf2a625142aed2b04d3e3"
+dependencies = [
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "greentic-types"
-version = "0.2.3"
-source = "git+https://github.com/greentic-ai/greentic-types?rev=666d48da3ac8033b77276411ec8d7ec10a30cf40#666d48da3ac8033b77276411ec8d7ec10a30cf40"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6362e86ec9aa970380ae6815a2704cbcf208b6cc8f5405bdca4b0fb8446a805"
 dependencies = [
  "greentic-telemetry 0.2.3",
  "greentic-types-macros",
@@ -1479,8 +1468,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types-macros"
-version = "0.2.3"
-source = "git+https://github.com/greentic-ai/greentic-types?rev=666d48da3ac8033b77276411ec8d7ec10a30cf40#666d48da3ac8033b77276411ec8d7ec10a30cf40"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d42290f1262dcc2064019a46675e86bfc368211d986ce46ebedfa6be4b63bc3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2402,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "oauth-testharness"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2544,7 +2534,6 @@ dependencies = [
  "opentelemetry_sdk",
  "prost",
  "reqwest 0.12.24",
- "serde_json",
  "thiserror 2.0.17",
  "tokio",
  "tonic",
@@ -2557,13 +2546,9 @@ version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
 dependencies = [
- "base64 0.22.1",
- "const-hex",
  "opentelemetry",
  "opentelemetry_sdk",
  "prost",
- "serde",
- "serde_json",
  "tonic",
  "tonic-prost",
 ]
@@ -2814,21 +2799,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proptest"
-version = "1.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bee689443a2bd0a16ab0348b52ee43e3b2d1b1f931c8aa5c9f8de4c86fbe8c40"
-dependencies = [
- "bitflags 2.10.0",
- "num-traits",
- "rand 0.9.2",
- "rand_chacha 0.9.0",
- "rand_xorshift",
- "regex-syntax",
- "unarray",
-]
-
-[[package]]
 name = "prost"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2931,9 +2901,9 @@ dependencies = [
 
 [[package]]
 name = "quote"
-version = "1.0.41"
+version = "1.0.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce25767e7b499d1b604768e7cde645d14cc8584231ea6b295e9c9eb22c02e1d1"
+checksum = "a338cc41d27e6cc6dce6cefc13a0729dfbb81c262b1f519331575dd80ef3067f"
 dependencies = [
  "proc-macro2",
 ]
@@ -3001,15 +2971,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
 dependencies = [
  "getrandom 0.3.4",
-]
-
-[[package]]
-name = "rand_xorshift"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "513962919efc330f829edb2535844d1b912b0fbe2ca165d613e4e8788bb05a5a"
-dependencies = [
- "rand_core 0.9.3",
 ]
 
 [[package]]
@@ -3434,9 +3395,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "1.0.5"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1317c3bf3e7df961da95b0a56a172a02abead31276215a0497241a7624b487ce"
+checksum = "9558e172d4e8533736ba97870c4b2cd63f84b382a3d6eb063da41b91cce17289"
 dependencies = [
  "dyn-clone",
  "ref-cast",
@@ -3447,9 +3408,9 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "1.0.5"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f760a6150d45dd66ec044983c124595ae76912e77ed0b44124cb3e415cce5d9"
+checksum = "301858a4023d78debd2353c7426dc486001bddc91ae31a76fb1f55132f7e2633"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3657,7 +3618,7 @@ dependencies = [
  "indexmap 1.9.3",
  "indexmap 2.11.4",
  "schemars 0.9.0",
- "schemars 1.0.5",
+ "schemars 1.1.0",
  "serde_core",
  "serde_json",
  "serde_with_macros",
@@ -3837,9 +3798,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
-version = "2.0.108"
+version = "2.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da58917d35242480a05c2897064da0a80589a2a0476c9a3f2fdc83b53502e917"
+checksum = "2f17c7e013e88258aa9543dcbe81aca68a667a9ac37cd69c9fbc07858bfe0e2f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4166,10 +4127,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
 dependencies = [
  "async-trait",
- "axum",
  "base64 0.22.1",
  "bytes",
- "h2 0.4.12",
  "http 1.3.1",
  "http-body 1.0.1",
  "http-body-util",
@@ -4178,7 +4137,6 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "socket2 0.6.1",
  "sync_wrapper 1.0.2",
  "tokio",
  "tokio-stream",
@@ -4313,16 +4271,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-serde"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "704b1aeb7be0d0a84fc9828cae51dab5970fee5088f83d1dd7ee6f6246fc6ff1"
-dependencies = [
- "serde",
- "tracing-core",
-]
-
-[[package]]
 name = "tracing-subscriber"
 version = "0.3.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4332,15 +4280,12 @@ dependencies = [
  "nu-ansi-term",
  "once_cell",
  "regex-automata",
- "serde",
- "serde_json",
  "sharded-slab",
  "smallvec",
  "thread_local",
  "tracing",
  "tracing-core",
  "tracing-log",
- "tracing-serde",
 ]
 
 [[package]]
@@ -4364,12 +4309,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "unarray"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "unicode-ident"

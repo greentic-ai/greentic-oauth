@@ -12,15 +12,13 @@ use serde_json::json;
 use crate::{
     audit::{self, AuditAttributes},
     http::{SharedContext, error::AppError},
+    ids::{parse_env_id, parse_team_id, parse_tenant_id, parse_user_id},
     storage::{
         index::ConnectionKey,
         secrets_manager::{SecretPath, SecretsManager},
     },
 };
-use greentic_types::{
-    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, UserId,
-    telemetry::set_current_tenant_ctx,
-};
+use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
 
 const REFRESH_WINDOW_SECS: u64 = 300;
 const DEFAULT_TTL_SECS: u64 = 3600;
@@ -114,14 +112,14 @@ where
     S: SecretsManager + 'static,
 {
     let mut telemetry_ctx = TelemetryTenantCtx::new(
-        EnvId::from(claims.tenant.env.as_str()),
-        TenantId::from(claims.tenant.tenant.as_str()),
+        parse_env_id(claims.tenant.env.as_str())?,
+        parse_tenant_id(claims.tenant.tenant.as_str())?,
     )
     .with_provider(claims.provider.clone())
-    .with_user(Some(UserId::from(claims.subject.as_str())));
+    .with_user(Some(parse_user_id(claims.subject.as_str())?));
 
     if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
     }
 
     set_current_tenant_ctx(&telemetry_ctx);
@@ -315,14 +313,14 @@ where
         }
     };
     let mut telemetry_ctx = TelemetryTenantCtx::new(
-        EnvId::from(claims.tenant.env.as_str()),
-        TenantId::from(claims.tenant.tenant.as_str()),
+        parse_env_id(claims.tenant.env.as_str())?,
+        parse_tenant_id(claims.tenant.tenant.as_str())?,
     )
     .with_provider(claims.provider.clone())
-    .with_user(Some(UserId::from(claims.subject.as_str())));
+    .with_user(Some(parse_user_id(claims.subject.as_str())?));
 
     if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
     }
 
     set_current_tenant_ctx(&telemetry_ctx);
@@ -519,14 +517,14 @@ where
         }
     };
     let mut telemetry_ctx = TelemetryTenantCtx::new(
-        EnvId::from(claims.tenant.env.as_str()),
-        TenantId::from(claims.tenant.tenant.as_str()),
+        parse_env_id(claims.tenant.env.as_str())?,
+        parse_tenant_id(claims.tenant.tenant.as_str())?,
     )
     .with_provider(claims.provider.clone())
-    .with_user(Some(UserId::from(claims.subject.as_str())));
+    .with_user(Some(parse_user_id(claims.subject.as_str())?));
 
     if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
     }
 
     set_current_tenant_ctx(&telemetry_ctx);

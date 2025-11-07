@@ -1,6 +1,6 @@
 use std::env;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use greentic_oauth_sdk::{Client, ClientConfig, SignedFetchRequest};
 use greentic_types::{
     EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, telemetry::set_current_tenant_ctx,
@@ -19,13 +19,22 @@ async fn main() -> Result<()> {
         env::var("FETCH_URL").unwrap_or_else(|_| "https://graph.microsoft.com/v1.0/me".to_string());
 
     let mut telemetry_ctx = TelemetryTenantCtx::new(
-        EnvId::from(config.env.as_str()),
-        TenantId::from(config.tenant.as_str()),
+        config
+            .env
+            .parse::<EnvId>()
+            .context("invalid env id in config")?,
+        config
+            .tenant
+            .parse::<TenantId>()
+            .context("invalid tenant id in config")?,
     )
     .with_provider(config.provider.clone());
 
     if let Some(team) = config.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team)));
+        let team_id = team
+            .parse::<TeamId>()
+            .context("invalid team id in config")?;
+        telemetry_ctx = telemetry_ctx.with_team(Some(team_id));
     }
 
     telemetry_ctx = telemetry_ctx.with_session(token_handle.clone());

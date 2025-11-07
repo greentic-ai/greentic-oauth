@@ -6,11 +6,10 @@ use serde::Deserialize;
 
 use crate::{
     http::error::AppError,
+    ids::{parse_env_id, parse_team_id, parse_tenant_id},
     storage::{models::Connection, secrets_manager::SecretsManager},
 };
-use greentic_types::{
-    EnvId, TeamId, TenantCtx as TelemetryTenantCtx, TenantId, telemetry::set_current_tenant_ctx,
-};
+use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
 
 use super::super::SharedContext;
 
@@ -38,12 +37,14 @@ pub async fn get_status<S>(
 where
     S: SecretsManager + 'static,
 {
-    let mut telemetry_ctx =
-        TelemetryTenantCtx::new(EnvId::from(env.as_str()), TenantId::from(tenant.as_str()))
-            .with_provider(provider.clone());
+    let mut telemetry_ctx = TelemetryTenantCtx::new(
+        parse_env_id(env.as_str())?,
+        parse_tenant_id(tenant.as_str())?,
+    )
+    .with_provider(provider.clone());
 
     if let Some(team_id) = team.as_ref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(TeamId::from(team_id.as_str())));
+        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team_id.as_str())?));
     }
 
     set_current_tenant_ctx(&telemetry_ctx);

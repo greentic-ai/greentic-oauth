@@ -40,6 +40,8 @@ webpki-roots = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 greentic-telemetry.workspace = true
 greentic-types = { workspace = true }
+opentelemetry = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 anyhow = { workspace = true }
 once_cell = { workspace = true }
 uuid = { workspace = true }

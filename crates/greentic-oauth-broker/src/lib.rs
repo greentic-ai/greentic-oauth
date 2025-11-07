@@ -3,6 +3,7 @@ pub mod config;
 pub mod discovery;
 pub mod events;
 pub mod http;
+pub mod ids;
 pub mod mcp;
 pub mod nats;
 pub mod providers;
