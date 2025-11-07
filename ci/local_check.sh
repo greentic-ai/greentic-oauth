@@ -119,7 +119,6 @@ run_cargo_fetch() {
 run_cargo_fmt() {
   local desc="cargo fmt"
   require_tool "cargo" "$desc" || return $?
-  require_tool "rustfmt" "$desc" || return $?
   cargo fmt --all -- --check
 }
 

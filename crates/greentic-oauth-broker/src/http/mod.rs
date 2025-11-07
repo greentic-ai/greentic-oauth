@@ -20,8 +20,8 @@ use axum::{
 use greentic_telemetry::{TelemetryCtx, with_current_telemetry_ctx};
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Counter as OtelCounter, Histogram as OtelHistogram};
-use opentelemetry::{KeyValue, global};
 use opentelemetry::trace::TraceContextExt;
+use opentelemetry::{KeyValue, global};
 use tower::{Layer, Service};
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::{Level, Span};
