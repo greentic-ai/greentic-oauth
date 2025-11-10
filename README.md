@@ -30,7 +30,10 @@ can forward S256 verifiers to upstream token endpoints when required. The
 authorization or token request tweaks (for example `prompt=select_account` or
 `login_hint=user@example.com`). The core crate does not validate these entries;
 brokers and SDKs are responsible for enforcing allow-lists appropriate for each
-provider.
+provider. The broker sanitises and allow-lists the keys for each integration
+(`prompt`, `login_hint`, etc.) before forwarding them. Set
+`BROKER_ALLOW_EXTRA_PARAMS=0` in deployments that must reject all dynamic query
+overrides—the handler will log and drop any user-supplied values in that mode.
 
 ## Self-describing OAuth
 
