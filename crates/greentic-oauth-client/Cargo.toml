@@ -2,6 +2,8 @@
 name = "greentic-oauth-client"
 version.workspace = true
 edition.workspace = true
+description = "Lightweight HTTP client for initiating OAuth flows against the Greentic OAuth Broker."
+license = "MIT"
 
 [dependencies]
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
