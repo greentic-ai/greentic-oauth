@@ -11,13 +11,13 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 
 [workspace.dependencies]
 greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "=0.3.1" }
-greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.3" }
-greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.3" }
+greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "=0.3.1" }
+greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "=0.3.1" }
 greentic-telemetry = { version = "0.3" }
 greentic-types = { version = "0.3", features = ["telemetry-autoinit"] }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
