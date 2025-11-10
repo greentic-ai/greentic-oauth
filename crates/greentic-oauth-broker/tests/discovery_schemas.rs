@@ -10,6 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ed25519_dalek::SigningKey as Ed25519SigningKey;
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     discovery::{ProviderDescriptor, load_provider_descriptor},
     events::{NoopPublisher, SharedPublisher},
@@ -32,6 +33,7 @@ use http_body_util::BodyExt;
 use jsonschema::{Validator, validator_for};
 use serde_json::{Value, json};
 use tempfile::tempdir;
+use url::Url;
 
 static PROVIDER_SCHEMA: &str =
     include_str!("../../../static/schemas/provider-descriptor.schema.json");
@@ -110,6 +112,8 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         Arc::new(ProviderCatalog::load(&config_root_path.join("providers")).expect("catalog"));
     let config_root = Arc::new(config_root_path);
 
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(900)));
+    let oauth_base_url = Arc::new(Url::parse("https://broker.example.com/").unwrap());
     Arc::new(AppContext {
         providers,
         security,
@@ -122,6 +126,8 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         provider_catalog,
         allow_insecure: true,
         enable_test_endpoints: false,
+        sessions,
+        oauth_base_url: Some(oauth_base_url),
     })
 }
 

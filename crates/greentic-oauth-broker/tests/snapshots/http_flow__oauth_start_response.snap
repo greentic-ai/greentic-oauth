@@ -1,0 +1,7 @@
+---
+source: crates/greentic-oauth-broker/tests/http_flow.rs
+expression: value
+---
+{
+  "start_url": "https://broker.example.com/authorize/{session}"
+}

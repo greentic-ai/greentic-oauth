@@ -97,6 +97,9 @@ impl GenericOidcProvider {
             if let Some(state) = &request.state {
                 query.append_pair("state", state);
             }
+            for (key, value) in &request.extra_params {
+                query.append_pair(key, value);
+            }
         }
 
         Ok((url, verifier))
@@ -163,14 +166,20 @@ impl Provider for GenericOidcProvider {
         })
     }
 
-    fn exchange_code(&self, _claims: &TokenHandleClaims, code: &str) -> ProviderResult<TokenSet> {
+    fn exchange_code(
+        &self,
+        _claims: &TokenHandleClaims,
+        code: &str,
+        pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet> {
         let scopes_owned = if self.default_scopes.is_empty() {
             String::new()
         } else {
             self.default_scopes.join(" ")
         };
         let code_owned = code.to_string();
-        let params = vec![
+        let verifier_owned = pkce_verifier.map(|value| value.to_string());
+        let mut params = vec![
             ("client_id", self.client_id.as_str()),
             ("client_secret", self.client_secret.as_str()),
             ("grant_type", "authorization_code"),
@@ -178,6 +187,9 @@ impl Provider for GenericOidcProvider {
             ("redirect_uri", self.redirect_uri.as_str()),
             ("scope", scopes_owned.as_str()),
         ];
+        if let Some(verifier) = verifier_owned.as_deref() {
+            params.push(("code_verifier", verifier));
+        }
 
         self.execute_token_request(&params)
     }
@@ -346,6 +358,7 @@ mod tests {
             scopes: vec!["openid".into(), "profile".into()],
             code_challenge: Some("challenge456".into()),
             code_challenge_method: Some("S256".into()),
+            extra_params: Vec::new(),
         }
     }
 
@@ -446,7 +459,7 @@ mod tests {
                     default_scopes: vec!["openid".into(), "profile".into()],
                     redirect_uri: "https://app.example.com/oidc".into(),
                 };
-                provider.exchange_code(&sample_claims(), "authcode")
+                provider.exchange_code(&sample_claims(), "authcode", Some("verifier123"))
             })
             .await
             .expect("spawn")

@@ -7,6 +7,7 @@ use axum::{
     http::{Response, StatusCode},
 };
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
     http::{
@@ -26,6 +27,7 @@ use greentic_oauth_broker::{
 use http_body_util::BodyExt;
 use serde_json::Value;
 use tempfile::tempdir;
+use url::Url;
 
 fn config_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
@@ -80,6 +82,8 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
     let config_root = Arc::new(config_root_path());
     let provider_catalog = Arc::new(ProviderCatalog::load(&providers_root()).expect("catalog"));
     let publisher: SharedPublisher = Arc::new(NoopPublisher);
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(900)));
+    let oauth_base_url = Arc::new(Url::parse("https://broker.example.com/").unwrap());
 
     Arc::new(AppContext {
         providers,
@@ -93,6 +97,8 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         provider_catalog,
         allow_insecure: true,
         enable_test_endpoints: false,
+        sessions,
+        oauth_base_url: Some(oauth_base_url),
     })
 }
 

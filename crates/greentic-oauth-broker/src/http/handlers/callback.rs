@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::{
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
 };
 use greentic_oauth_core::types::{OwnerKind, TenantCtx as BrokerTenantCtx, TokenHandleClaims};
 use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
@@ -12,6 +12,7 @@ use serde_json::json;
 
 use crate::{
     audit::{self, AuditAttributes},
+    auth::{AuthSession, StateClaims, record_callback_failure, record_callback_success},
     http::{error::AppError, state::FlowState, util::ensure_secure_request},
     ids::{parse_env_id, parse_team_id, parse_tenant_id, parse_user_id},
     rate_limit,
@@ -59,6 +60,7 @@ where
                 }),
             )
             .await;
+            record_callback_failure("unknown", None, StatusCode::BAD_REQUEST, "missing_state");
             return Err(AppError::bad_request("missing state"));
         }
     };
@@ -77,9 +79,44 @@ where
                 }),
             )
             .await;
+            record_callback_failure(
+                "unknown",
+                None,
+                StatusCode::BAD_REQUEST,
+                "invalid_state_token",
+            );
             return Err(err.into());
         }
     };
+
+    if let Ok(state_claims) = serde_json::from_str::<StateClaims>(&payload) {
+        let session = match ctx.sessions.claim(&state_claims.sid) {
+            Some(session) => session,
+            None => {
+                audit::emit(
+                    &ctx.publisher,
+                    "callback_error",
+                    &unknown_attrs,
+                    json!({
+                        "flow_id": serde_json::Value::Null,
+                        "reason": "session_not_found",
+                        "error": "authorization session expired or already claimed",
+                    }),
+                )
+                .await;
+                record_callback_failure(
+                    "unknown",
+                    None,
+                    StatusCode::BAD_REQUEST,
+                    "session_not_found",
+                );
+                return Err(AppError::bad_request("authorization session expired"));
+            }
+        };
+        let response =
+            complete_session_flow(&ctx, code.clone(), error.clone(), session, state_claims).await?;
+        return Ok(response);
+    }
 
     let flow_state: FlowState = match serde_json::from_str(&payload) {
         Ok(flow) => flow,
@@ -95,10 +132,77 @@ where
                 }),
             )
             .await;
+            record_callback_failure(
+                "unknown",
+                None,
+                StatusCode::BAD_REQUEST,
+                "invalid_state_payload",
+            );
             return Err(err.into());
         }
     };
 
+    let response = complete_flow_core(&ctx, code, error, flow_state, None).await?;
+    Ok(response)
+}
+
+async fn complete_session_flow<S>(
+    ctx: &SharedContext<S>,
+    code: Option<String>,
+    error: Option<String>,
+    session: AuthSession,
+    state_claims: StateClaims,
+) -> Result<Response, AppError>
+where
+    S: SecretsManager + 'static,
+{
+    let latency_ms = session
+        .created_at
+        .elapsed()
+        .ok()
+        .map(|duration| duration.as_secs_f64() * 1000.0);
+    let flow_state = session.flow_state;
+    let attrs = build_audit_attrs(&flow_state);
+
+    if state_claims.tenant != flow_state.tenant
+        || state_claims.team != flow_state.team
+        || state_claims.user != flow_state.owner_id
+        || state_claims.nonce != flow_state.nonce
+    {
+        audit::emit(
+            &ctx.publisher,
+            "callback_error",
+            &attrs,
+            json!({
+                "flow_id": flow_state.flow_id.clone(),
+                "reason": "state_mismatch",
+                "error": "state claims mismatch session",
+            }),
+        )
+        .await;
+        emit_auth_failure(ctx, &flow_state, "state_mismatch").await;
+        record_callback_failure(
+            &flow_state.provider,
+            latency_ms,
+            StatusCode::BAD_REQUEST,
+            "state_mismatch",
+        );
+        return Err(AppError::bad_request("state validation failed"));
+    }
+
+    complete_flow_core(ctx, code, error, flow_state, latency_ms).await
+}
+
+async fn complete_flow_core<S>(
+    ctx: &SharedContext<S>,
+    code: Option<String>,
+    error: Option<String>,
+    flow_state: FlowState,
+    latency_ms: Option<f64>,
+) -> Result<Response, AppError>
+where
+    S: SecretsManager + 'static,
+{
     let mut telemetry_ctx = TelemetryTenantCtx::new(
         parse_env_id(flow_state.env.as_str())?,
         parse_tenant_id(flow_state.tenant.as_str())?,
@@ -113,12 +217,7 @@ where
 
     set_current_tenant_ctx(&telemetry_ctx);
 
-    let attrs = AuditAttributes {
-        env: &flow_state.env,
-        tenant: &flow_state.tenant,
-        team: flow_state.team.as_deref(),
-        provider: &flow_state.provider,
-    };
+    let attrs = build_audit_attrs(&flow_state);
     let flow_id = flow_state.flow_id.clone();
 
     let rate_key = rate_limit::key(
@@ -139,6 +238,13 @@ where
             }),
         )
         .await;
+        emit_auth_failure(ctx, &flow_state, "rate_limited").await;
+        record_callback_failure(
+            &flow_state.provider,
+            latency_ms,
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+        );
         return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "rate limit exceeded",
@@ -157,8 +263,15 @@ where
             }),
         )
         .await;
+        emit_auth_failure(ctx, &flow_state, "provider_error").await;
+        record_callback_failure(
+            &flow_state.provider,
+            latency_ms,
+            StatusCode::BAD_REQUEST,
+            "provider_error",
+        );
         return Err(AppError::bad_request(format!(
-            "provider returned error: {err_msg}"
+            "provider returned error: {err_msg}",
         )));
     }
 
@@ -176,6 +289,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "missing_code").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::BAD_REQUEST,
+                "missing_code",
+            );
             return Err(AppError::bad_request("missing code"));
         }
     };
@@ -194,6 +314,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "provider_not_registered").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::NOT_FOUND,
+                "provider_not_registered",
+            );
             return Err(AppError::not_found("provider not registered"));
         }
     };
@@ -223,7 +350,8 @@ where
         expires_at: current_epoch_seconds(),
     };
 
-    let token_set = match provider.exchange_code(&claims, &code) {
+    let pkce_verifier = flow_state.pkce_verifier.clone();
+    let token_set = match provider.exchange_code(&claims, &code, Some(&pkce_verifier)) {
         Ok(tokens) => tokens,
         Err(err) => {
             let app_err: AppError = err.into();
@@ -238,6 +366,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "exchange_failed").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::BAD_GATEWAY,
+                "exchange_failed",
+            );
             return Err(app_err);
         }
     };
@@ -260,6 +395,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "encrypt_failed").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "encrypt_failed",
+            );
             return Err(err.into());
         }
     };
@@ -279,6 +421,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "secret_path_failed").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "secret_path_failed",
+            );
             return Err(err.into());
         }
     };
@@ -294,6 +443,13 @@ where
             }),
         )
         .await;
+        emit_auth_failure(ctx, &flow_state, "secret_store_failed").await;
+        record_callback_failure(
+            &flow_state.provider,
+            latency_ms,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "secret_store_failed",
+        );
         return Err(err.into());
     }
 
@@ -342,6 +498,13 @@ where
                 }),
             )
             .await;
+            emit_auth_failure(ctx, &flow_state, "event_encode_failed").await;
+            record_callback_failure(
+                &flow_state.provider,
+                latency_ms,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "event_encode_failed",
+            );
             return Err(err.into());
         }
     };
@@ -357,6 +520,13 @@ where
             }),
         )
         .await;
+        emit_auth_failure(ctx, &flow_state, "event_publish_failed").await;
+        record_callback_failure(
+            &flow_state.provider,
+            latency_ms,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "event_publish_failed",
+        );
         return Err(err.into());
     }
 
@@ -373,10 +543,30 @@ where
     )
     .await;
 
-    if let Some(target) = redirect_target {
-        Ok(Redirect::temporary(&target).into_response())
+    emit_auth_success(ctx, &flow_state, &claims).await;
+
+    let status = if redirect_target.is_some() {
+        StatusCode::TEMPORARY_REDIRECT
     } else {
-        Ok((StatusCode::OK, "ok").into_response())
+        StatusCode::OK
+    };
+    record_callback_success(&flow_state.provider, latency_ms, status);
+
+    let response = if let Some(target) = redirect_target {
+        Redirect::temporary(&target).into_response()
+    } else {
+        (StatusCode::OK, "ok").into_response()
+    };
+
+    Ok(response)
+}
+
+fn build_audit_attrs<'a>(flow_state: &'a FlowState) -> AuditAttributes<'a> {
+    AuditAttributes {
+        env: &flow_state.env,
+        tenant: &flow_state.tenant,
+        team: flow_state.team.as_deref(),
+        provider: &flow_state.provider,
     }
 }
 
@@ -396,4 +586,89 @@ struct CallbackEventPayload {
     provider: String,
     token_handle: TokenHandleClaims,
     storage_path: String,
+}
+
+#[derive(Serialize)]
+struct AuthSuccessEvent<'a> {
+    tenant: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team: Option<&'a str>,
+    user: &'a str,
+    provider: &'a str,
+    subject: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    email: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expires_at: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct AuthFailureEvent<'a> {
+    tenant: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team: Option<&'a str>,
+    user: &'a str,
+    provider: &'a str,
+    reason: &'a str,
+}
+
+async fn emit_auth_success<S>(
+    ctx: &SharedContext<S>,
+    flow_state: &FlowState,
+    claims: &TokenHandleClaims,
+) where
+    S: SecretsManager + 'static,
+{
+    let payload = AuthSuccessEvent {
+        tenant: &flow_state.tenant,
+        team: flow_state.team.as_deref(),
+        user: &flow_state.owner_id,
+        provider: &flow_state.provider,
+        subject: &claims.subject,
+        display_name: None,
+        email: None,
+        expires_at: Some(claims.expires_at),
+    };
+    publish_domain_event(ctx, "auth.success", &payload).await;
+}
+
+async fn emit_auth_failure<S>(ctx: &SharedContext<S>, flow_state: &FlowState, reason: &str)
+where
+    S: SecretsManager + 'static,
+{
+    let payload = AuthFailureEvent {
+        tenant: &flow_state.tenant,
+        team: flow_state.team.as_deref(),
+        user: &flow_state.owner_id,
+        provider: &flow_state.provider,
+        reason,
+    };
+    publish_domain_event(ctx, "auth.failure", &payload).await;
+}
+
+async fn publish_domain_event<S, P>(ctx: &SharedContext<S>, subject: &str, payload: &P)
+where
+    S: SecretsManager + 'static,
+    P: Serialize,
+{
+    match serde_json::to_vec(payload) {
+        Ok(bytes) => {
+            if let Err(err) = ctx.publisher.publish(subject, &bytes).await {
+                tracing::warn!(
+                    %subject,
+                    error = %err,
+                    "failed to publish auth domain event"
+                );
+            }
+        }
+        Err(err) => {
+            tracing::warn!(
+                %subject,
+                error = %err,
+                "failed to encode auth domain event payload"
+            );
+        }
+    }
 }

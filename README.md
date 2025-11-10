@@ -40,7 +40,7 @@ Key artifacts:
 
 1. **Client / UI** – requests a flow for a specific tenant/team and redirects the user to the provider consent screen.
 2. **OAuth Broker (`crates/greentic-oauth-broker`)** – published as `greentic-oauth-broker`; exposes HTTP + NATS APIs, orchestrates provider flows, signs token handles (JWS), encrypts secrets (JWE), and publishes audit/NATS events.
-3. **Secrets Manager** – default `EnvSecretsManager` persists encrypted payloads under `envs/{env}/tenants/{tenant}/…`.
+3. **Secrets Manager** – default `EnvSecretsManager` persists encrypted payloads using keys like `oauth:env:{env}:tenant:{tenant}:team:{team}:owner:{kind}:{id}:provider:{provider}.json`.
 4. **Provider integrations** – pluggable providers (Microsoft Graph, Generic OIDC today) registered via env-driven config.
 5. **Worker / SDKs** – `oauth-worker` (Cloudflare Worker example) and `greentic-oauth-sdk` (Rust SDK + WIT bindings) consume broker APIs for automation and WASM embedding.
 
@@ -50,8 +50,10 @@ All endpoints live under the broker root (default `0.0.0.0:8080`). Path segments
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/:env/:tenant/:provider/start` | Initiates a flow. Query: `team`, `owner_kind` (`user`/`service`), `owner_id`, `flow_id`, `scopes` (CSV/space), `redirect_uri`, `visibility` (`private`, `team`, `tenant`). Returns `302` to provider authorize URL. |
-| `GET` | `/callback` | Provider redirect target. Query: `code`, `state`, optional `error`. Persists encrypted token, publishes `oauth.res.*`, returns `302` to original app redirect or `200`. Rate-limited per `{env,tenant,team,provider}`. |
+| `POST` | `/oauth/start` | JSON body matching the legacy query parameters (`env`, `tenant`, `provider`, `team`, `owner_kind`, `owner_id`, `flow_id`, `scopes`, `visibility`, `redirect_uri`). Creates an `AuthSession` with PKCE + signed state and returns `{ "start_url": "https://broker/authorize/{sid}" }`. |
+| `GET` | `/authorize/:id` | Validates the session id, rehydrates the stored authorize URL, and issues a `302` redirect to the external provider. Sessions expire after 15 minutes and are one-time-use. |
+| `GET` | `/:env/:tenant/:provider/start` | Legacy flow initiation via query parameters. Still supported for backwards compatibility. |
+| `GET` | `/callback` (also `/oauth/callback`) | Provider redirect target. Query: `code`, `state`, optional `error`. Persists encrypted token, publishes `oauth.res.*`, emits `auth.success`/`auth.failure`, redirects to the app redirect when provided, else returns `200`. Rate-limited per `{env,tenant,team,provider}`. |
 | `GET` | `/status/:env/:tenant/:provider` | Lists available connections for scope (tenant/team). Query: optional `team`. Response JSON array of `{ provider_account_id, visibility, created_at }`. |
 | `POST` | `/token` | Resolves an access token for a signed token handle. Body: `{ "token_handle": "<jws>", "force_refresh": bool }`. Response: `{ "access_token": "...", "expires_at": 1700000000 }`. |
 | `POST` | `/signed-fetch` | Performs a signed upstream HTTP request. Body: `{ "token_handle": "...", "method": "GET", "url": "...", "headers": [{ "name": "...", "value": "..." }], "body": "base64?", "body_encoding": "base64" }`. Response mirrors `status`, headers, and `body` (base64). |
@@ -61,6 +63,24 @@ Additional behaviours:
 - `/start` and `/callback` enforce in-memory rate limiting (`RateLimiter`) keyed by `{env,tenant,team?,provider}`.
 - Errors such as missing/invalid state, provider failures, or rate limits emit structured audit events (`oauth.audit.*`) before returning `4xx/5xx`.
 - Optional test-only helpers (`/_test/refresh`, `/_test/signed-fetch`) can be enabled via `--enable-test-endpoints` or `OAUTH_ENABLE_TEST_ENDPOINTS=true`. They proxy refresh grants and simple bearer requests for local conformance tooling and should remain disabled in production.
+
+## How It Works
+
+```mermaid
+sequenceDiagram
+    participant App as App / SDK
+    participant Broker
+    participant Provider
+    App->>Broker: POST /oauth/start (tenant, provider, owner…)
+    Broker-->>App: start_url (authorize/{sid})
+    App->>Provider: Redirect user to provider authorize URL
+    Provider-->>Broker: GET /oauth/callback?code&state
+    Broker->>Broker: Verify signed state + nonce (session)
+    Broker->>Provider: Exchange code + PKCE verifier
+    Broker->>Broker: Encrypt tokens, persist via SecretsManager
+    Broker-->>Events: auth.success/auth.failure
+    Broker-->>App: Redirect back to configured success/failure URL
+```
 
 ## Live OAuth Conformance
 
@@ -140,6 +160,7 @@ The broker optionally connects to NATS (`NATS_URL`, `NATS_TLS_DOMAIN`). Requests
 
 - `oauth.res.{tenant}.{env}.{teamSegment}.{provider}.{flowId}` – success payloads after `/callback`.
 - `oauth.audit.{env}.{tenant}.{teamSegment}.{provider}.{action}` – structured audit events for `started`, `callback_success`, `callback_error`, `refresh`, `revoke`, `signed_fetch`, etc.
+- `auth.success` / `auth.failure` – domain events summarising callback outcomes (tenant, team, user/service subject, provider, expiry, reason).
 
 ## WIT Contract
 
@@ -196,6 +217,20 @@ The broker emits OpenTelemetry traces and JSON logs through [`greentic-telemetry
 
 Set `TELEMETRY_EXPORT=json-stdout` during local development to stream structured logs containing `service.name=greentic-oauth-broker`, `service.environment`, and the default tenant/team context.
 
+Broker-specific metrics include:
+
+- `auth.start.created` – counter incremented for every `POST /oauth/start`.
+- `auth.callback.success` / `auth.callback.failure` – tagged by provider + HTTP status.
+- `auth.callback.latency_ms` – histogram measuring wall clock from `/oauth/start` to `/oauth/callback`.
+
+## Troubleshooting
+
+- **`oauth base url not configured`** – `POST /oauth/start` requires `OAUTH_BASE_URL` so the broker can mint `https://…/authorize/{sid}` links. Set it to the externally reachable HTTPS origin (include the trailing slash).
+- **`redirect_uri not permitted`** – ensure the target origin is present in `OAUTH_REDIRECT_WHITELIST` (comma-separated list). The broker refuses unlisted origins even when a provider manifest allows them.
+- **`authorization session expired` / `session_not_found`** – `/oauth/start` sessions expire after `OAUTH_SESSION_TTL_SECS` (default 900s) and are single-use. Re-run the start request if the user takes too long or reuses the callback URL.
+- **`state validation failed`** – indicates a mismatch between the signed state payload and the stored session (tenant/team/user/nonce). Typically caused by mixing start URLs across tenants or reusing stale browser tabs.
+- **`rate limit exceeded`** – both `/oauth/start` and `/oauth/callback` enforce `{env,tenant,team?,provider}` quotas. Tune `OAUTH_RATE_LIMIT_MAX` / `OAUTH_RATE_LIMIT_WINDOW_SECS` for high-volume tenants or retry with exponential backoff.
+
 ## Releases & Publishing
 
 Crate versions are taken directly from each `Cargo.toml`. When you push to `master`, the CI pipeline inspects all crates via `cargo metadata`:
@@ -212,6 +247,7 @@ Trigger the workflow manually via “Run workflow” if you need to republish; a
 2. **Configure environment variables** on the broker host:
    - Microsoft Graph: `MSGRAPH_CLIENT_ID`, `MSGRAPH_CLIENT_SECRET`, `MSGRAPH_TENANT_MODE` (`common`, `organizations`, `consumers`, or `single:<tenantId>`), `MSGRAPH_REDIRECT_URI`, optional `MSGRAPH_DEFAULT_SCOPES`, optional `MSGRAPH_RESOURCE`.
    - Generic OIDC: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`, `OIDC_REDIRECT_URI`, optional `OIDC_DEFAULT_SCOPES`.
+   - Broker runtime: `OAUTH_BASE_URL` (public URL for `/authorize/{id}`), optional `OAUTH_SESSION_TTL_SECS`, and either `OAUTH_HMAC_SECRET_BASE64` or `OAUTH_HMAC_SECRET` for state signing.
 3. **Whitelist redirects** via `OAUTH_REDIRECT_WHITELIST=https://app.greentic.ai/`.
 4. **Expose secret storage** (`SECRETS_DIR`) and ensure volume durability & access controls.
 5. **Enable NATS (optional)** by setting `NATS_URL` (+ `NATS_TLS_DOMAIN` when using TLS). The broker will publish/resubscribe automatically.
@@ -222,6 +258,7 @@ Add new providers by implementing the `greentic_oauth_core::provider::Provider` 
 ## SDK & Examples
 
 - **Rust SDK**: [`crates/greentic-oauth-sdk`](crates/greentic-oauth-sdk/) ships as `greentic-oauth-sdk` and exposes a high-level `Client` plus component host bindings for WASM environments.
+- **HTTP helper**: [`crates/greentic-oauth-client`](crates/greentic-oauth-client/) provides a lightweight REST client (`Client::start`) and provider presets (`providers::resolve("microsoft")`) for services that just need to kick off interactive flows.
 - **Worker Example**: [`oauth-worker`](oauth-worker/) demonstrates how to expose HTTP routes in a serverless edge runtime using the SDK.
 - **Tests**: Integration suites under [`crates/greentic-oauth-broker/tests`](crates/greentic-oauth-broker/tests/) show end-to-end HTTP and NATS flows, including audit assertions.
 
@@ -280,7 +317,7 @@ With these contracts in place, backend services, workers, and WASM components ca
 
 ## Multi-Tenancy & Secrets Schema
 
-Every broker instance resolves configuration using the tuple `{env, tenant, team?, user?}`. Provider manifests live under `configs/providers/<provider>.yaml`; tenant/team/user overlays are merged deterministically (`env → tenant → team → user`) from `configs/tenants/<tenant>/**/<provider>.yaml`. Secrets are persisted using the derived storage path defined in `FlowState::secret_path`, producing files such as `envs/dev/tenants/acme/providers/microsoft-graph/user-user-1.json`. The default `EnvSecretsManager` stores a `StoredToken` envelope containing encrypted bytes plus an optional `expires_at` so that background refresh jobs can operate without re-reading token handles.
+Every broker instance resolves configuration using the tuple `{env, tenant, team?, user?}`. Provider manifests live under `configs/providers/<provider>.yaml`; tenant/team/user overlays are merged deterministically (`env → tenant → team → user`) from `configs/tenants/<tenant>/**/<provider>.yaml`. Secrets are persisted using the derived storage path defined in `FlowState::secret_path`, producing keys such as `oauth:env:prod:tenant:acme:team:platform:owner:user:user-1:provider:microsoft-graph.json`. The default `EnvSecretsManager` stores a `StoredToken` envelope containing encrypted bytes plus an optional `expires_at` so that background refresh jobs can operate without re-reading token handles.
 
 ## Providers & Scopes
 

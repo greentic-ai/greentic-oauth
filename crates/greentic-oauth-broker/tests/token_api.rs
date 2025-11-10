@@ -16,6 +16,7 @@ use axum::{
 };
 use base64::Engine as _;
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, PublishError, SharedPublisher},
     http::{self, AppContext, SharedContext},
@@ -39,6 +40,7 @@ use serde_json::{Value, json};
 use tempfile::tempdir;
 use tokio::{net::TcpListener, task::JoinHandle};
 use tower::ServiceExt;
+use url::Url;
 
 fn config_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
@@ -421,6 +423,8 @@ fn build_context(
     let config_root = Arc::new(config_root_path());
     let provider_catalog =
         Arc::new(ProviderCatalog::load(&config_root.join("providers")).expect("catalog"));
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(900)));
+    let oauth_base_url = Arc::new(Url::parse("https://broker.example.com/").unwrap());
 
     let context = Arc::new(AppContext {
         providers,
@@ -434,6 +438,8 @@ fn build_context(
         provider_catalog,
         allow_insecure: true,
         enable_test_endpoints: false,
+        sessions,
+        oauth_base_url: Some(oauth_base_url),
     });
 
     (context, refresh_counter, publisher_impl)
@@ -525,7 +531,12 @@ impl Provider for TestProvider {
         ))
     }
 
-    fn exchange_code(&self, _claims: &TokenHandleClaims, _code: &str) -> ProviderResult<TokenSet> {
+    fn exchange_code(
+        &self,
+        _claims: &TokenHandleClaims,
+        _code: &str,
+        _pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet> {
         Err(ProviderError::new(
             ProviderErrorKind::Unsupported,
             Some("not used".to_string()),

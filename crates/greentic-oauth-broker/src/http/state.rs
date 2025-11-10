@@ -18,6 +18,7 @@ pub struct FlowState {
     pub nonce: String,
     pub redirect_uri: Option<String>,
     pub pkce_verifier: String,
+    pub pkce_challenge: String,
     pub scopes: Vec<String>,
     pub visibility: Visibility,
 }
@@ -34,6 +35,7 @@ impl FlowState {
         owner_id: impl Into<String>,
         redirect_uri: Option<String>,
         pkce_verifier: impl Into<String>,
+        pkce_challenge: impl Into<String>,
         scopes: Vec<String>,
         visibility: Visibility,
     ) -> Self {
@@ -48,6 +50,7 @@ impl FlowState {
             nonce: Self::generate_nonce(),
             redirect_uri,
             pkce_verifier: pkce_verifier.into(),
+            pkce_challenge: pkce_challenge.into(),
             scopes,
             visibility,
         }
@@ -59,16 +62,16 @@ impl FlowState {
     }
 
     pub fn secret_path(&self) -> Result<SecretPath, StorageError> {
-        let mut segments = vec![
-            format!("envs/{}", self.env),
-            format!("tenants/{}", self.tenant),
-        ];
-        if let Some(team) = &self.team {
-            segments.push(format!("teams/{team}"));
-        }
-        segments.push(format!("providers/{}", self.provider));
-        segments.push(format!("{}-{}", self.owner_kind.as_str(), self.owner_id));
-
-        SecretPath::new(format!("{}.json", segments.join("/")))
+        let team = self.team.as_deref().unwrap_or("_");
+        let key = format!(
+            "oauth:env:{}:tenant:{}:team:{}:owner:{}:{}:provider:{}",
+            self.env,
+            self.tenant,
+            team,
+            self.owner_kind.as_str(),
+            self.owner_id,
+            self.provider,
+        );
+        SecretPath::new(format!("{key}.json"))
     }
 }

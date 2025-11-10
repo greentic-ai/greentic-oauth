@@ -164,6 +164,8 @@ pub struct OAuthFlowRequest {
     pub scopes: Vec<String>,
     pub code_challenge: Option<String>,
     pub code_challenge_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_params: Vec<(String, String)>,
 }
 
 /// High-level result of building an authorization redirect.
@@ -251,6 +253,7 @@ mod tests {
             scopes: vec!["openid".to_owned(), "profile".to_owned()],
             code_challenge: Some("challenge".to_owned()),
             code_challenge_method: Some("S256".to_owned()),
+            extra_params: Vec::new(),
         };
         let json = to_string(&request).expect("serialize request");
         let parsed: OAuthFlowRequest = from_str(&json).expect("deserialize request");

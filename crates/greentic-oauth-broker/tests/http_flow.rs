@@ -6,7 +6,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use axum::body::Body;
+use axum::body::{self, Body};
 use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
@@ -15,6 +15,7 @@ use axum::{
 use hyper::{Method, Request};
 
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, NoopPublisher, PublishError, SharedPublisher},
     http::{
@@ -131,7 +132,12 @@ impl Provider for FakeProvider {
         })
     }
 
-    fn exchange_code(&self, _claims: &TokenHandleClaims, code: &str) -> ProviderResult<TokenSet> {
+    fn exchange_code(
+        &self,
+        _claims: &TokenHandleClaims,
+        code: &str,
+        _pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet> {
         if code != self.expected_code {
             return Err(ProviderError::new(
                 ProviderErrorKind::Authorization,
@@ -171,37 +177,11 @@ fn security_config() -> SecurityConfig {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn build_context(
-    provider_registry: Arc<ProviderRegistry>,
-    security: Arc<SecurityConfig>,
-    secrets: Arc<EnvSecretsManager>,
-    index: Arc<StorageIndex>,
-    redirect_guard: Arc<RedirectGuard>,
-    publisher: SharedPublisher,
-    rate_limiter: Arc<RateLimiter>,
-    config_root: Arc<PathBuf>,
-    provider_catalog: Arc<ProviderCatalog>,
-    allow_insecure: bool,
-    enable_test_endpoints: bool,
-) -> SharedContext<EnvSecretsManager> {
-    Arc::new(AppContext {
-        providers: provider_registry,
-        security,
-        secrets,
-        index,
-        redirect_guard,
-        publisher,
-        rate_limiter,
-        config_root,
-        provider_catalog,
-        allow_insecure,
-        enable_test_endpoints,
-    })
-}
-
-#[tokio::test]
-async fn start_to_callback_happy_path() {
+fn happy_path_context() -> (
+    SharedContext<EnvSecretsManager>,
+    Arc<TestPublisher>,
+    Arc<SecurityConfig>,
+) {
     let mut registry = ProviderRegistry::new();
     let fake_provider = Arc::new(FakeProvider::new());
     registry.insert("fake", fake_provider.clone() as Arc<dyn Provider>);
@@ -223,16 +203,58 @@ async fn start_to_callback_happy_path() {
     let context = build_context(
         provider_registry,
         security.clone(),
-        secrets.clone(),
-        index.clone(),
+        secrets,
+        index,
         redirect_guard,
         publisher,
-        rate_limiter.clone(),
-        config_root.clone(),
-        provider_catalog.clone(),
+        rate_limiter,
+        config_root,
+        provider_catalog,
         true,
         false,
     );
+
+    (context, publisher_impl, security)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_context(
+    provider_registry: Arc<ProviderRegistry>,
+    security: Arc<SecurityConfig>,
+    secrets: Arc<EnvSecretsManager>,
+    index: Arc<StorageIndex>,
+    redirect_guard: Arc<RedirectGuard>,
+    publisher: SharedPublisher,
+    rate_limiter: Arc<RateLimiter>,
+    config_root: Arc<PathBuf>,
+    provider_catalog: Arc<ProviderCatalog>,
+    allow_insecure: bool,
+    enable_test_endpoints: bool,
+) -> SharedContext<EnvSecretsManager> {
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(900)));
+    let oauth_base_url = Arc::new(Url::parse("https://broker.example.com/").unwrap());
+    Arc::new(AppContext {
+        providers: provider_registry,
+        security,
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter,
+        config_root,
+        provider_catalog,
+        allow_insecure,
+        enable_test_endpoints,
+        sessions,
+        oauth_base_url: Some(oauth_base_url),
+    })
+}
+
+#[tokio::test]
+async fn start_to_callback_happy_path() {
+    let (context, publisher_impl, security) = happy_path_context();
+    let secrets = context.secrets.clone();
+    let index = context.index.clone();
 
     let start_response = initiate::start::<EnvSecretsManager>(
         Path(StartPath {
@@ -248,6 +270,8 @@ async fn start_to_callback_happy_path() {
             scopes: Some("read,offline_access".into()),
             redirect_uri: Some("https://app.example.com/success".into()),
             visibility: Some("team".into()),
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context.clone()),
@@ -321,7 +345,7 @@ async fn start_to_callback_happy_path() {
 
     {
         let events = publisher_impl.events.lock().unwrap();
-        assert_eq!(events.len(), 3);
+        assert_eq!(events.len(), 4);
         let mut events_map: HashMap<&str, &[u8]> = HashMap::new();
         for (subject, payload) in events.iter() {
             events_map.insert(subject.as_str(), payload.as_slice());
@@ -356,6 +380,15 @@ async fn start_to_callback_happy_path() {
         assert_eq!(success_json["action"], "callback_success");
         assert_eq!(success_json["data"]["flow_id"], "flow-123");
         assert_eq!(success_json["data"]["storage_path"], secret_path.as_str());
+
+        let auth_success_payload = events_map
+            .get("auth.success")
+            .expect("auth success event present");
+        let auth_success: serde_json::Value =
+            serde_json::from_slice(auth_success_payload).expect("auth success payload");
+        assert_eq!(auth_success["tenant"], "acme");
+        assert_eq!(auth_success["provider"], "fake");
+        assert_eq!(auth_success["user"], flow_state.owner_id);
     }
 
     let status = status::get_status::<EnvSecretsManager>(
@@ -372,6 +405,126 @@ async fn start_to_callback_happy_path() {
     .await
     .expect("status");
     assert_eq!(status.0.len(), 1);
+}
+
+#[tokio::test]
+async fn oauth_start_api_returns_session_url() {
+    let (context, _publisher, _security) = happy_path_context();
+    let app = greentic_oauth_broker::http::router(context.clone());
+
+    let payload = serde_json::json!({
+        "env": "prod",
+        "tenant": "acme",
+        "provider": "fake",
+        "team": "platform",
+        "owner_kind": "user",
+        "owner_id": "user-1",
+        "flow_id": "flow-api-1",
+        "scopes": ["read"],
+        "redirect_uri": "https://app.example.com/success",
+        "visibility": "tenant"
+    });
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/oauth/start")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("start response");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body_bytes = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let start: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    let start_url = start
+        .get("start_url")
+        .and_then(|value| value.as_str())
+        .expect("start_url");
+    let parsed = Url::parse(start_url).expect("start url");
+    assert!(
+        parsed
+            .as_str()
+            .starts_with("https://broker.example.com/authorize/"),
+        "start_url {start_url} should point to authorize route"
+    );
+    let session_id = parsed
+        .path()
+        .trim_start_matches('/')
+        .trim_start_matches("authorize/")
+        .to_string();
+    assert!(
+        !session_id.is_empty(),
+        "session id should be part of the authorize path"
+    );
+
+    let authorize = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri(format!("/authorize/{session_id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("authorize response");
+    assert_eq!(authorize.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = authorize
+        .headers()
+        .get(axum::http::header::LOCATION)
+        .and_then(|value: &HeaderValue| value.to_str().ok())
+        .expect("location header");
+    assert!(
+        location.starts_with("https://fake.provider"),
+        "authorize redirect should target the provider"
+    );
+}
+
+#[tokio::test]
+async fn start_api_response_snapshot() {
+    let (context, _publisher, _security) = happy_path_context();
+    let app = greentic_oauth_broker::http::router(context.clone());
+    let payload = serde_json::json!({
+        "env": "prod",
+        "tenant": "acme",
+        "provider": "fake",
+        "team": "platform",
+        "owner_kind": "user",
+        "owner_id": "user-1",
+        "flow_id": "flow-snap",
+        "redirect_uri": "https://app.example.com/success",
+        "visibility": "tenant",
+        "preset": "microsoft"
+    });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/oauth/start")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("start response");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body_bytes = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let mut value: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    if let Some(url_value) = value.get_mut("start_url") {
+        if let Some(url_str) = url_value.as_str() {
+            assert!(url_str.starts_with("https://broker.example.com/authorize/"));
+        }
+        *url_value =
+            serde_json::Value::String("https://broker.example.com/authorize/{session}".into());
+    }
+    insta::assert_json_snapshot!("oauth_start_response", value);
 }
 
 #[derive(Deserialize)]
@@ -494,6 +647,8 @@ async fn start_populates_scopes_from_manifest_when_missing() {
             scopes: None,
             redirect_uri: Some("https://app.example.com/success".into()),
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context),
@@ -559,6 +714,8 @@ async fn start_rate_limit_enforced() {
             scopes: None,
             redirect_uri: None,
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context.clone()),
@@ -580,6 +737,8 @@ async fn start_rate_limit_enforced() {
             scopes: None,
             redirect_uri: None,
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context.clone()),
@@ -652,6 +811,8 @@ async fn start_rejects_insecure_without_forwarded_proto() {
             scopes: None,
             redirect_uri: Some("https://app.example.com/success".into()),
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context.clone()),
@@ -680,6 +841,8 @@ async fn start_rejects_insecure_without_forwarded_proto() {
             scopes: None,
             redirect_uri: Some("https://app.example.com/success".into()),
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         headers,
         State(context),
@@ -736,6 +899,8 @@ async fn callback_rate_limit_enforced() {
             scopes: None,
             redirect_uri: None,
             visibility: None,
+            preset: None,
+            prompt: None,
         }),
         HeaderMap::new(),
         State(context.clone()),

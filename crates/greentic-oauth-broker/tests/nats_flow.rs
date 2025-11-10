@@ -6,6 +6,7 @@ use axum::{
     response::IntoResponse,
 };
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
     http::{
@@ -70,6 +71,7 @@ impl Provider for FakeProvider {
         if let Some(challenge) = &request.code_challenge {
             pairs.push(("code_challenge".into(), challenge.clone()));
         }
+        pairs.extend(request.extra_params.clone());
         let mut url = Url::parse(self.auth_url()).unwrap();
         {
             let mut qp = url.query_pairs_mut();
@@ -85,7 +87,12 @@ impl Provider for FakeProvider {
         })
     }
 
-    fn exchange_code(&self, _claims: &TokenHandleClaims, _code: &str) -> ProviderResult<TokenSet> {
+    fn exchange_code(
+        &self,
+        _claims: &TokenHandleClaims,
+        _code: &str,
+        _pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet> {
         Ok(TokenSet {
             access_token: "token-abc".into(),
             expires_in: Some(1200),
@@ -137,6 +144,8 @@ fn build_context(
     config_root: Arc<PathBuf>,
     provider_catalog: Arc<ProviderCatalog>,
 ) -> SharedContext<EnvSecretsManager> {
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(900)));
+    let oauth_base_url = Arc::new(Url::parse("https://broker.example.com/").unwrap());
     Arc::new(AppContext {
         providers: registry,
         security,
@@ -149,6 +158,8 @@ fn build_context(
         provider_catalog,
         allow_insecure: true,
         enable_test_endpoints: false,
+        sessions,
+        oauth_base_url: Some(oauth_base_url),
     })
 }
 

@@ -144,6 +144,8 @@ where
         scopes,
         redirect_uri,
         visibility,
+        preset: None,
+        prompt: None,
     };
 
     let (redirect_url, state_token, _flow_state) = process_start(ctx, &request)

@@ -180,6 +180,9 @@ impl MicrosoftProvider {
             if let Some(state) = &request.state {
                 query.append_pair("state", state);
             }
+            for (key, value) in &request.extra_params {
+                query.append_pair(key, value);
+            }
         }
 
         Ok((url, verifier))
@@ -243,11 +246,16 @@ impl Provider for MicrosoftProvider {
         })
     }
 
-    fn exchange_code(&self, _claims: &TokenHandleClaims, code: &str) -> ProviderResult<TokenSet> {
+    fn exchange_code(
+        &self,
+        _claims: &TokenHandleClaims,
+        code: &str,
+        pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet> {
         let scope_list = self.normalized_scopes(&_claims.scopes);
         let scope_owned = scope_list.join(" ");
         let code_owned = code.to_string();
-        let params = vec![
+        let mut params = vec![
             ("client_id".to_string(), self.client_id.clone()),
             ("client_secret".to_string(), self.client_secret.clone()),
             ("grant_type".to_string(), "authorization_code".to_string()),
@@ -255,6 +263,9 @@ impl Provider for MicrosoftProvider {
             ("redirect_uri".to_string(), self.redirect_uri.clone()),
             ("scope".to_string(), scope_owned),
         ];
+        if let Some(verifier) = pkce_verifier {
+            params.push(("code_verifier".to_string(), verifier.to_string()));
+        }
 
         self.execute_token_request(params)
     }
@@ -420,6 +431,7 @@ mod tests {
             scopes: vec!["User.Read".into(), "offline_access".into()],
             code_challenge: Some("challenge123".into()),
             code_challenge_method: Some("S256".into()),
+            extra_params: Vec::new(),
         }
     }
 
@@ -524,7 +536,7 @@ mod tests {
                     default_scopes: vec!["User.Read".into(), "offline_access".into()],
                     resource_audience: None,
                 };
-                provider.exchange_code(&sample_claims(), "authcode")
+                provider.exchange_code(&sample_claims(), "authcode", Some("verifier123"))
             })
             .await
             .expect("spawn")

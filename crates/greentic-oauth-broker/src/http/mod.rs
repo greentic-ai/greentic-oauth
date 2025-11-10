@@ -28,6 +28,7 @@ use tracing::{Level, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
     providers::manifest::ProviderCatalog,
@@ -35,6 +36,7 @@ use crate::{
     security::SecurityConfig,
     storage::{StorageIndex, secrets_manager::SecretsManager},
 };
+use url::Url;
 
 #[derive(Clone)]
 pub struct AppContext<S>
@@ -52,6 +54,8 @@ where
     pub provider_catalog: Arc<ProviderCatalog>,
     pub allow_insecure: bool,
     pub enable_test_endpoints: bool,
+    pub sessions: Arc<AuthSessionStore>,
+    pub oauth_base_url: Option<Arc<Url>>,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;
@@ -73,7 +77,16 @@ where
             "/{env}/{tenant}/{provider}/start",
             get(handlers::initiate::start::<S>),
         )
+        .route(
+            "/oauth/start",
+            post(handlers::oauth_api::start_session::<S>),
+        )
+        .route(
+            "/authorize/{id}",
+            get(handlers::oauth_api::authorize_session::<S>),
+        )
         .route("/callback", get(handlers::callback::complete::<S>))
+        .route("/oauth/callback", get(handlers::callback::complete::<S>))
         .route(
             "/status/{env}/{tenant}/{provider}",
             get(handlers::status::get_status::<S>),

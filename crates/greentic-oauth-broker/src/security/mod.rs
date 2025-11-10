@@ -37,7 +37,16 @@ impl SecurityConfig {
             .map_err(|err| SecurityError::Encoding(err.to_string()))?;
 
         let jwe = JweVault::from_key_bytes(&jwe_key)?;
-        let csrf = CsrfKey::new(&jwe_key)?;
+        let csrf_key_bytes = if let Ok(b64) = std::env::var("OAUTH_HMAC_SECRET_BASE64") {
+            BASE64_STANDARD
+                .decode(b64.as_bytes())
+                .map_err(|err| SecurityError::Encoding(err.to_string()))?
+        } else if let Ok(raw) = std::env::var("OAUTH_HMAC_SECRET") {
+            raw.into_bytes()
+        } else {
+            jwe_key.clone()
+        };
+        let csrf = CsrfKey::new(&csrf_key_bytes)?;
 
         let discovery = load_discovery_signer()?;
 

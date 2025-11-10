@@ -3,6 +3,7 @@ use std::{net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
 use anyhow::Result;
 use axum::Router;
 use greentic_oauth_broker::{
+    auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
     http, nats,
@@ -12,6 +13,7 @@ use greentic_oauth_broker::{
     storage::{StorageIndex, env::EnvSecretsManager},
 };
 use tokio::signal;
+use url::Url;
 
 #[greentic_types::telemetry::main(service_name = "greentic-oauth")]
 async fn main() {
@@ -41,6 +43,25 @@ async fn run() -> Result<()> {
         std::env::var("PROVIDER_CONFIG_ROOT").unwrap_or_else(|_| "./configs".into()),
     ));
     let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers"))?);
+    let session_ttl_secs = std::env::var("OAUTH_SESSION_TTL_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(900)
+        .max(60);
+    let sessions = Arc::new(AuthSessionStore::new(Duration::from_secs(session_ttl_secs)));
+    let oauth_base_url = std::env::var("OAUTH_BASE_URL").ok().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        match Url::parse(trimmed) {
+            Ok(url) => Some(Arc::new(url)),
+            Err(err) => {
+                tracing::error!(%err, "invalid OAUTH_BASE_URL");
+                None
+            }
+        }
+    });
 
     let nats_options = nats::NatsOptions::from_env().ok();
 
@@ -98,6 +119,8 @@ async fn run() -> Result<()> {
         provider_catalog,
         allow_insecure,
         enable_test_endpoints,
+        sessions,
+        oauth_base_url,
     };
     let shared_context = Arc::new(context);
 

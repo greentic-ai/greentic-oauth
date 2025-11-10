@@ -19,7 +19,12 @@ pub trait Provider: Send + Sync {
         request: &OAuthFlowRequest,
     ) -> ProviderResult<OAuthFlowResult>;
     /// Exchange an authorization code for tokens.
-    fn exchange_code(&self, claims: &TokenHandleClaims, code: &str) -> ProviderResult<TokenSet>;
+    fn exchange_code(
+        &self,
+        claims: &TokenHandleClaims,
+        code: &str,
+        pkce_verifier: Option<&str>,
+    ) -> ProviderResult<TokenSet>;
     /// Refresh an existing token set.
     fn refresh(&self, claims: &TokenHandleClaims, refresh_token: &str) -> ProviderResult<TokenSet>;
     /// Revoke an access or refresh token.

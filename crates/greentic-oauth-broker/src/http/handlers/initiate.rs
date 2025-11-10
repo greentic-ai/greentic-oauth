@@ -14,7 +14,7 @@ use crate::{
     audit::{self, AuditAttributes},
     http::{error::AppError, state::FlowState, util::ensure_secure_request},
     ids::{parse_env_id, parse_team_id, parse_tenant_id},
-    providers::manifest::ManifestContext,
+    providers::{manifest::ManifestContext, presets},
     rate_limit,
     security::pkce::PkcePair,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
@@ -38,6 +38,8 @@ pub struct StartQuery {
     pub scopes: Option<String>,
     pub redirect_uri: Option<String>,
     pub visibility: Option<String>,
+    pub preset: Option<String>,
+    pub prompt: Option<String>,
 }
 
 #[derive(Clone)]
@@ -52,6 +54,16 @@ pub struct StartRequest {
     pub scopes: Vec<String>,
     pub redirect_uri: Option<String>,
     pub visibility: Visibility,
+    pub preset: Option<String>,
+    pub prompt: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct PreparedStart {
+    pub redirect_url: String,
+    pub state_token: String,
+    pub flow_state: FlowState,
+    pub pkce: PkcePair,
 }
 
 fn parse_scopes(input: Option<String>) -> Vec<String> {
@@ -66,7 +78,7 @@ fn parse_scopes(input: Option<String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn parse_visibility(input: Option<String>) -> Result<Visibility, AppError> {
+pub(crate) fn parse_visibility(input: Option<String>) -> Result<Visibility, AppError> {
     match input {
         Some(value) => Visibility::from_str(value.to_lowercase().as_str())
             .map_err(|_| AppError::bad_request("unknown visibility")),
@@ -85,12 +97,14 @@ fn build_owner_kind(key: OwnerKindKey, owner_id: &str) -> OwnerKind {
     }
 }
 
-pub async fn process_start<S>(
+pub async fn prepare_start<S, F>(
     ctx: &SharedContext<S>,
     request: &StartRequest,
-) -> Result<(String, String, FlowState), AppError>
+    build_state: F,
+) -> Result<PreparedStart, AppError>
 where
     S: SecretsManager + 'static,
+    F: FnOnce(&FlowState) -> Result<String, AppError>,
 {
     let mut telemetry_ctx = TelemetryTenantCtx::new(
         parse_env_id(request.env.as_str())?,
@@ -151,6 +165,12 @@ where
         }
     }
 
+    let preset = request
+        .preset
+        .as_deref()
+        .and_then(presets::resolve)
+        .or_else(|| presets::resolve(request.provider.as_str()));
+
     let mut scopes = if request.scopes.is_empty() {
         resolved_manifest
             .as_ref()
@@ -161,11 +181,29 @@ where
     };
 
     if scopes.is_empty() {
+        if let Some(preset) = preset {
+            scopes = preset.scopes.iter().map(|s| s.to_string()).collect();
+        }
+    }
+
+    if scopes.is_empty() {
         scopes = vec![
             "offline_access".to_string(),
             "openid".to_string(),
             "profile".to_string(),
         ];
+    }
+
+    let mut extra_params = Vec::new();
+    if let Some(prompt_value) = request
+        .prompt
+        .clone()
+        .or_else(|| preset.and_then(|p| p.prompt).map(|p| p.to_string()))
+    {
+        extra_params.push(("prompt".to_string(), prompt_value));
+    }
+    if let Some(resource) = preset.and_then(|p| p.resource) {
+        extra_params.push(("resource".to_string(), resource.to_string()));
     }
 
     let pkce = PkcePair::generate();
@@ -180,12 +218,12 @@ where
         &request.owner_id,
         request.redirect_uri.clone(),
         &pkce.verifier,
+        &pkce.challenge,
         scopes.clone(),
         request.visibility.clone(),
     );
 
-    let state_payload = serde_json::to_string(&flow_state)?;
-    let state_token = ctx.security.csrf.seal("state", &state_payload)?;
+    let state_token = build_state(&flow_state)?;
 
     let owner = build_owner_kind(request.owner_kind.clone(), &request.owner_id);
 
@@ -201,6 +239,7 @@ where
         scopes: scopes.clone(),
         code_challenge: Some(pkce.challenge.clone()),
         code_challenge_method: Some("S256".to_string()),
+        extra_params: extra_params.clone(),
     };
 
     let redirect = provider.build_authorize_redirect(&oauth_request)?;
@@ -222,7 +261,33 @@ where
 
     audit::emit(&ctx.publisher, "started", &attrs, audit_data).await;
 
-    Ok((redirect.redirect_url, state_token, flow_state))
+    Ok(PreparedStart {
+        redirect_url: redirect.redirect_url,
+        state_token,
+        flow_state,
+        pkce,
+    })
+}
+
+pub async fn process_start<S>(
+    ctx: &SharedContext<S>,
+    request: &StartRequest,
+) -> Result<(String, String, FlowState), AppError>
+where
+    S: SecretsManager + 'static,
+{
+    let csrf = ctx.security.csrf.clone();
+    let prepared = prepare_start(ctx, request, move |flow_state| {
+        let payload = serde_json::to_string(flow_state)?;
+        csrf.seal("state", &payload).map_err(AppError::from)
+    })
+    .await?;
+
+    Ok((
+        prepared.redirect_url,
+        prepared.state_token,
+        prepared.flow_state,
+    ))
 }
 
 pub async fn start<S>(
@@ -239,6 +304,8 @@ pub async fn start<S>(
         scopes,
         redirect_uri,
         visibility,
+        preset,
+        prompt,
     }): Query<StartQuery>,
     headers: HeaderMap,
     State(ctx): State<SharedContext<S>>,
@@ -264,6 +331,8 @@ where
         scopes: scopes_list,
         redirect_uri,
         visibility,
+        preset,
+        prompt,
     };
 
     let (redirect_url, _, _) = process_start(&ctx, &start_request).await?;
