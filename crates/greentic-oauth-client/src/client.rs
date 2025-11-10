@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::BTreeMap, time::Duration};
 
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
@@ -109,6 +109,7 @@ pub struct StartRequest {
     pub scopes: Vec<String>,
     pub redirect_uri: Option<String>,
     pub visibility: Option<Visibility>,
+    pub extra_params: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -127,6 +128,8 @@ struct ApiStartRequest<'a> {
     redirect_uri: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     visibility: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extra_params: Option<&'a BTreeMap<String, String>>,
 }
 
 impl<'a> From<&'a StartRequest> for ApiStartRequest<'a> {
@@ -142,6 +145,7 @@ impl<'a> From<&'a StartRequest> for ApiStartRequest<'a> {
             scopes: &request.scopes,
             redirect_uri: request.redirect_uri.as_deref(),
             visibility: request.visibility.as_ref().map(Visibility::as_str),
+            extra_params: request.extra_params.as_ref(),
         }
     }
 }

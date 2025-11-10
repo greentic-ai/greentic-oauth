@@ -13,7 +13,7 @@ tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-dotenvy = "0.15"
+dotenvy = { workspace = true }
 greentic-oauth-sdk = { workspace = true }
 uuid = { workspace = true }
 greentic-oauth-core = { workspace = true }

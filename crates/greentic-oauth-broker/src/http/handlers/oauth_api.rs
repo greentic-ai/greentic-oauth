@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use axum::{
     Json,
@@ -45,6 +45,8 @@ pub struct ApiStartRequest {
     pub preset: Option<String>,
     #[serde(default)]
     pub prompt: Option<String>,
+    #[serde(default)]
+    pub extra_params: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Serialize)]
@@ -67,23 +69,43 @@ where
         AppError::internal("oauth base url not configured")
     })?;
 
-    let owner_kind = OwnerKindKey::from_str(body.owner_kind.as_str())
+    let ApiStartRequest {
+        env,
+        tenant,
+        provider,
+        team,
+        owner_kind: owner_kind_raw,
+        owner_id,
+        flow_id,
+        scopes,
+        redirect_uri,
+        visibility,
+        preset,
+        prompt,
+        extra_params,
+    } = body;
+
+    let owner_kind = OwnerKindKey::from_str(owner_kind_raw.as_str())
         .map_err(|_| AppError::bad_request("invalid owner_kind"))?;
-    let visibility = initiate::parse_visibility(body.visibility.clone())?;
+    let visibility = initiate::parse_visibility(visibility.clone())?;
+    let raw_extra = extra_params.unwrap_or_default();
+    let extra_params =
+        initiate::sanitize_extra_params(&provider, ctx.allow_extra_params, &raw_extra);
 
     let start_request = StartRequest {
-        env: body.env,
-        tenant: body.tenant,
-        provider: body.provider,
-        team: body.team,
+        env,
+        tenant,
+        provider,
+        team,
         owner_kind,
-        owner_id: body.owner_id,
-        flow_id: body.flow_id,
-        scopes: body.scopes,
-        redirect_uri: body.redirect_uri,
+        owner_id,
+        flow_id,
+        scopes,
+        redirect_uri,
         visibility,
-        preset: body.preset,
-        prompt: body.prompt,
+        preset,
+        prompt,
+        extra_params,
     };
 
     let session_id = Ulid::new().to_string();

@@ -113,8 +113,7 @@ mod tests {
             crate::storage::index::OwnerKindKey::User,
             "user",
             Some("https://app.example.com/cb".into()),
-            "verifier",
-            "challenge",
+            None,
             vec!["scope".into()],
             crate::storage::models::Visibility::Private,
         );

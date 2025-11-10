@@ -17,8 +17,8 @@ pub struct FlowState {
     pub owner_id: String,
     pub nonce: String,
     pub redirect_uri: Option<String>,
-    pub pkce_verifier: String,
-    pub pkce_challenge: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pkce_verifier: Option<String>,
     pub scopes: Vec<String>,
     pub visibility: Visibility,
 }
@@ -34,8 +34,7 @@ impl FlowState {
         owner_kind: OwnerKindKey,
         owner_id: impl Into<String>,
         redirect_uri: Option<String>,
-        pkce_verifier: impl Into<String>,
-        pkce_challenge: impl Into<String>,
+        pkce_verifier: Option<String>,
         scopes: Vec<String>,
         visibility: Visibility,
     ) -> Self {
@@ -49,8 +48,7 @@ impl FlowState {
             owner_id: owner_id.into(),
             nonce: Self::generate_nonce(),
             redirect_uri,
-            pkce_verifier: pkce_verifier.into(),
-            pkce_challenge: pkce_challenge.into(),
+            pkce_verifier,
             scopes,
             visibility,
         }

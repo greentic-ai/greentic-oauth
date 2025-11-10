@@ -350,8 +350,8 @@ where
         expires_at: current_epoch_seconds(),
     };
 
-    let pkce_verifier = flow_state.pkce_verifier.clone();
-    let token_set = match provider.exchange_code(&claims, &code, Some(&pkce_verifier)) {
+    let pkce_hint = flow_state.pkce_verifier.clone();
+    let token_set = match provider.exchange_code(&claims, &code, pkce_hint.as_deref()) {
         Ok(tokens) => tokens,
         Err(err) => {
             let app_err: AppError = err.into();

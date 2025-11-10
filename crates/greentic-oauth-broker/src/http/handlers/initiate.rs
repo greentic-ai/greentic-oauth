@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use axum::{
     extract::{Path, Query, State},
@@ -19,6 +19,7 @@ use crate::{
     security::pkce::PkcePair,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
 };
+use tracing::warn;
 
 use super::super::SharedContext;
 
@@ -40,6 +41,8 @@ pub struct StartQuery {
     pub visibility: Option<String>,
     pub preset: Option<String>,
     pub prompt: Option<String>,
+    #[serde(default)]
+    pub extra: BTreeMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -56,6 +59,7 @@ pub struct StartRequest {
     pub visibility: Visibility,
     pub preset: Option<String>,
     pub prompt: Option<String>,
+    pub extra_params: BTreeMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -63,7 +67,100 @@ pub struct PreparedStart {
     pub redirect_url: String,
     pub state_token: String,
     pub flow_state: FlowState,
-    pub pkce: PkcePair,
+}
+
+const EXTRA_KEY_MAX_LEN: usize = 32;
+const EXTRA_VALUE_MAX_LEN: usize = 256;
+const EXTRA_PARAM_LIMIT: usize = 8;
+
+const OIDC_EXTRA_KEYS: &[&str] = &["prompt", "login_hint", "access_type", "resource", "claims"];
+const MS_EXTRA_KEYS: &[&str] = &["prompt", "login_hint", "domain_hint", "resource"];
+
+fn allowed_extra_keys(provider: &str) -> &'static [&'static str] {
+    if provider.eq_ignore_ascii_case("msgraph")
+        || provider.eq_ignore_ascii_case("microsoft-graph")
+        || provider.eq_ignore_ascii_case("microsoft")
+    {
+        MS_EXTRA_KEYS
+    } else {
+        OIDC_EXTRA_KEYS
+    }
+}
+
+pub(crate) fn sanitize_extra_params(
+    provider: &str,
+    allow_extra: bool,
+    raw: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    if raw.is_empty() || !allow_extra {
+        if !raw.is_empty() && !allow_extra {
+            warn!(
+                provider = provider,
+                "extra params disabled; dropping {} user-supplied entries",
+                raw.len()
+            );
+        }
+        return BTreeMap::new();
+    }
+
+    let allowed = allowed_extra_keys(provider);
+    let mut filtered = BTreeMap::new();
+    for (key, value) in raw.iter() {
+        if filtered.len() >= EXTRA_PARAM_LIMIT {
+            warn!(
+                provider = provider,
+                "extra param limit ({}) reached; ignoring additional entries", EXTRA_PARAM_LIMIT
+            );
+            break;
+        }
+
+        let normalized_key = key.trim().to_ascii_lowercase();
+        if normalized_key.is_empty() || normalized_key.len() > EXTRA_KEY_MAX_LEN {
+            warn!(
+                provider = provider,
+                key = key,
+                "ignoring extra param with invalid key length"
+            );
+            continue;
+        }
+        if !normalized_key
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
+            warn!(
+                provider = provider,
+                key = %normalized_key,
+                "ignoring extra param with invalid characters"
+            );
+            continue;
+        }
+        if !allowed.contains(&normalized_key.as_str()) {
+            warn!(
+                provider = provider,
+                key = %normalized_key,
+                "extra param not allowed for provider"
+            );
+            continue;
+        }
+
+        let trimmed = value.trim();
+        if trimmed.is_empty()
+            || trimmed.len() > EXTRA_VALUE_MAX_LEN
+            || !trimmed.is_ascii()
+            || trimmed.chars().any(char::is_control)
+        {
+            warn!(
+                provider = provider,
+                key = %normalized_key,
+                "ignoring extra param due to unsafe value"
+            );
+            continue;
+        }
+
+        filtered.insert(normalized_key, trimmed.to_string());
+    }
+
+    filtered
 }
 
 fn parse_scopes(input: Option<String>) -> Vec<String> {
@@ -180,10 +277,10 @@ where
         request.scopes.clone()
     };
 
-    if scopes.is_empty() {
-        if let Some(preset) = preset {
-            scopes = preset.scopes.iter().map(|s| s.to_string()).collect();
-        }
+    if scopes.is_empty()
+        && let Some(preset) = preset
+    {
+        scopes = preset.scopes.iter().map(|s| s.to_string()).collect();
     }
 
     if scopes.is_empty() {
@@ -194,16 +291,16 @@ where
         ];
     }
 
-    let mut extra_params = Vec::new();
+    let mut extra_params = request.extra_params.clone();
     if let Some(prompt_value) = request
         .prompt
         .clone()
         .or_else(|| preset.and_then(|p| p.prompt).map(|p| p.to_string()))
     {
-        extra_params.push(("prompt".to_string(), prompt_value));
+        extra_params.insert("prompt".into(), prompt_value);
     }
     if let Some(resource) = preset.and_then(|p| p.resource) {
-        extra_params.push(("resource".to_string(), resource.to_string()));
+        extra_params.insert("resource".into(), resource.to_string());
     }
 
     let pkce = PkcePair::generate();
@@ -217,8 +314,7 @@ where
         request.owner_kind.clone(),
         &request.owner_id,
         request.redirect_uri.clone(),
-        &pkce.verifier,
-        &pkce.challenge,
+        Some(pkce.verifier.clone()),
         scopes.clone(),
         request.visibility.clone(),
     );
@@ -239,7 +335,11 @@ where
         scopes: scopes.clone(),
         code_challenge: Some(pkce.challenge.clone()),
         code_challenge_method: Some("S256".to_string()),
-        extra_params: extra_params.clone(),
+        extra_params: if extra_params.is_empty() {
+            None
+        } else {
+            Some(extra_params.clone())
+        },
     };
 
     let redirect = provider.build_authorize_redirect(&oauth_request)?;
@@ -265,7 +365,6 @@ where
         redirect_url: redirect.redirect_url,
         state_token,
         flow_state,
-        pkce,
     })
 }
 
@@ -306,6 +405,7 @@ pub async fn start<S>(
         visibility,
         preset,
         prompt,
+        extra,
     }): Query<StartQuery>,
     headers: HeaderMap,
     State(ctx): State<SharedContext<S>>,
@@ -320,6 +420,8 @@ where
 
     let visibility = parse_visibility(visibility)?;
     let scopes_list = parse_scopes(scopes);
+    let extra_params = sanitize_extra_params(provider.as_str(), ctx.allow_extra_params, &extra);
+
     let start_request = StartRequest {
         env,
         tenant,
@@ -333,6 +435,7 @@ where
         visibility,
         preset,
         prompt,
+        extra_params,
     };
 
     let (redirect_url, _, _) = process_start(&ctx, &start_request).await?;

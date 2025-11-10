@@ -125,6 +125,7 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         config_root,
         provider_catalog,
         allow_insecure: true,
+        allow_extra_params: true,
         enable_test_endpoints: false,
         sessions,
         oauth_base_url: Some(oauth_base_url),

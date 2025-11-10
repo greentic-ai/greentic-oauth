@@ -19,6 +19,11 @@ pub trait Provider: Send + Sync {
         request: &OAuthFlowRequest,
     ) -> ProviderResult<OAuthFlowResult>;
     /// Exchange an authorization code for tokens.
+    ///
+    /// Providers SHOULD enforce PKCE when supported by the upstream
+    /// integration. If the caller generated a verifier during the authorize
+    /// redirect, it will be supplied via `pkce_verifier`; implementations are
+    /// free to ignore the hint when the upstream does not require it.
     fn exchange_code(
         &self,
         claims: &TokenHandleClaims,

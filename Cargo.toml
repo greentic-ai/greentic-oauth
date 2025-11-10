@@ -15,7 +15,7 @@ version = "0.3.0"
 edition = "2024"
 
 [workspace.dependencies]
-greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.3" }
+greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "=0.3.1" }
 greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.3" }
 greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.3" }
 greentic-telemetry = { version = "0.3" }
@@ -59,3 +59,9 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 wasmtime = { version = "38", features = ["component-model"] }
 webpki-roots = "1"
+jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
+openidconnect = { version = "3.5", default-features = false, features = ["reqwest", "rustls-tls"] }
+time = { version = "0.3", features = ["serde"] }
+wiremock = "0.6"
+insta = { version = "1.39.0", features = ["json"] }
+dotenvy = "0.15"

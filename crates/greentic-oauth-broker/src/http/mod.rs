@@ -53,6 +53,7 @@ where
     pub config_root: Arc<PathBuf>,
     pub provider_catalog: Arc<ProviderCatalog>,
     pub allow_insecure: bool,
+    pub allow_extra_params: bool,
     pub enable_test_endpoints: bool,
     pub sessions: Arc<AuthSessionStore>,
     pub oauth_base_url: Option<Arc<Url>>,

@@ -102,6 +102,11 @@ async fn run() -> Result<()> {
         .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
         .unwrap_or(false);
 
+    let allow_extra_params = std::env::var("BROKER_ALLOW_EXTRA_PARAMS")
+        .ok()
+        .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
+        .unwrap_or(true);
+
     let enable_test_endpoints = enable_test_flag
         || std::env::var("OAUTH_ENABLE_TEST_ENDPOINTS")
             .ok()
@@ -118,6 +123,7 @@ async fn run() -> Result<()> {
         config_root: config_root.clone(),
         provider_catalog,
         allow_insecure,
+        allow_extra_params,
         enable_test_endpoints,
         sessions,
         oauth_base_url,

@@ -72,8 +72,7 @@ mod tests {
             crate::storage::index::OwnerKindKey::User,
             "user-123",
             Some("https://app.example.com/callback".into()),
-            "verifier",
-            "challenge",
+            None,
             vec!["offline_access".into()],
             crate::storage::models::Visibility::Private,
         )

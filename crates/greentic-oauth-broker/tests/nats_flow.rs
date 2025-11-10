@@ -71,7 +71,6 @@ impl Provider for FakeProvider {
         if let Some(challenge) = &request.code_challenge {
             pairs.push(("code_challenge".into(), challenge.clone()));
         }
-        pairs.extend(request.extra_params.clone());
         let mut url = Url::parse(self.auth_url()).unwrap();
         {
             let mut qp = url.query_pairs_mut();
@@ -157,6 +156,7 @@ fn build_context(
         config_root,
         provider_catalog,
         allow_insecure: true,
+        allow_extra_params: true,
         enable_test_endpoints: false,
         sessions,
         oauth_base_url: Some(oauth_base_url),

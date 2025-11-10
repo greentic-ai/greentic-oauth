@@ -6,8 +6,6 @@ use serde::Deserialize;
 use ureq::Agent;
 use url::Url;
 
-use crate::security::pkce::PkcePair;
-
 pub struct GenericOidcProvider {
     agent: Agent,
     client_id: String,
@@ -57,10 +55,7 @@ impl GenericOidcProvider {
         })
     }
 
-    fn build_query(
-        &self,
-        request: &OAuthFlowRequest,
-    ) -> Result<(Url, Option<String>), ProviderError> {
+    fn build_query(&self, request: &OAuthFlowRequest) -> Result<Url, ProviderError> {
         let mut url = Url::parse(&self.auth_url).map_err(|err| {
             ProviderError::new(
                 ProviderErrorKind::Configuration,
@@ -74,42 +69,43 @@ impl GenericOidcProvider {
             request.scopes.join(" ")
         };
 
-        let (challenge, method, verifier) = match (
-            request.code_challenge.clone(),
-            request.code_challenge_method.clone(),
-        ) {
-            (Some(challenge), Some(method)) => (challenge, method, None),
-            _ => {
-                let pair = PkcePair::generate();
-                (pair.challenge, "S256".to_string(), Some(pair.verifier))
-            }
-        };
-
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("client_id", &self.client_id);
             query.append_pair("response_type", "code");
             query.append_pair("redirect_uri", &request.redirect_uri);
             query.append_pair("scope", &scopes);
-            query.append_pair("code_challenge", &challenge);
-            query.append_pair("code_challenge_method", &method);
+            if let (Some(challenge), Some(method)) = (
+                request.code_challenge.clone(),
+                request.code_challenge_method.clone(),
+            ) {
+                query.append_pair("code_challenge", &challenge);
+                query.append_pair("code_challenge_method", &method);
+            }
 
             if let Some(state) = &request.state {
                 query.append_pair("state", state);
             }
-            for (key, value) in &request.extra_params {
-                query.append_pair(key, value);
+            if let Some(extra) = request.extra_params.as_ref() {
+                for (key, value) in extra {
+                    if matches!(
+                        key.as_str(),
+                        "prompt" | "login_hint" | "access_type" | "resource" | "claims"
+                    ) {
+                        query.append_pair(key, value);
+                    }
+                }
             }
         }
 
-        Ok((url, verifier))
+        Ok(url)
     }
 
-    fn execute_token_request(&self, params: &[(&str, &str)]) -> ProviderResult<TokenSet> {
+    fn execute_token_request(&self, params: &[(String, String)]) -> ProviderResult<TokenSet> {
         let mut response = self
             .agent
             .post(&self.token_url)
-            .send_form(params.iter().copied())
+            .send_form(params.iter().map(|(k, v)| (k.as_str(), v.as_str())))
             .map_err(|err| ProviderError::new(ProviderErrorKind::Transport, err.to_string()))?;
 
         let status = response.status();
@@ -153,7 +149,7 @@ impl Provider for GenericOidcProvider {
         &self,
         request: &OAuthFlowRequest,
     ) -> ProviderResult<OAuthFlowResult> {
-        let (url, _verifier) = self.build_query(request)?;
+        let url = self.build_query(request)?;
 
         Ok(OAuthFlowResult {
             redirect_url: url.to_string(),
@@ -177,18 +173,16 @@ impl Provider for GenericOidcProvider {
         } else {
             self.default_scopes.join(" ")
         };
-        let code_owned = code.to_string();
-        let verifier_owned = pkce_verifier.map(|value| value.to_string());
         let mut params = vec![
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
-            ("grant_type", "authorization_code"),
-            ("code", code_owned.as_str()),
-            ("redirect_uri", self.redirect_uri.as_str()),
-            ("scope", scopes_owned.as_str()),
+            ("client_id".to_string(), self.client_id.clone()),
+            ("client_secret".to_string(), self.client_secret.clone()),
+            ("grant_type".to_string(), "authorization_code".to_string()),
+            ("code".to_string(), code.to_string()),
+            ("redirect_uri".to_string(), self.redirect_uri.clone()),
+            ("scope".to_string(), scopes_owned),
         ];
-        if let Some(verifier) = verifier_owned.as_deref() {
-            params.push(("code_verifier", verifier));
+        if let Some(verifier) = pkce_verifier {
+            params.push(("code_verifier".to_string(), verifier.to_string()));
         }
 
         self.execute_token_request(&params)
@@ -206,11 +200,11 @@ impl Provider for GenericOidcProvider {
         };
         let refresh_owned = refresh_token.to_string();
         let params = vec![
-            ("client_id", self.client_id.as_str()),
-            ("client_secret", self.client_secret.as_str()),
-            ("grant_type", "refresh_token"),
-            ("refresh_token", refresh_owned.as_str()),
-            ("scope", scopes_owned.as_str()),
+            ("client_id".to_string(), self.client_id.clone()),
+            ("client_secret".to_string(), self.client_secret.clone()),
+            ("grant_type".to_string(), "refresh_token".to_string()),
+            ("refresh_token".to_string(), refresh_owned),
+            ("scope".to_string(), scopes_owned),
         ];
 
         self.execute_token_request(&params)
@@ -358,7 +352,7 @@ mod tests {
             scopes: vec!["openid".into(), "profile".into()],
             code_challenge: Some("challenge456".into()),
             code_challenge_method: Some("S256".into()),
-            extra_params: Vec::new(),
+            extra_params: None,
         }
     }
 

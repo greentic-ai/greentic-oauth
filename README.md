@@ -20,6 +20,18 @@ To mirror CI locally, run:
 make check
 ```
 
+## PKCE & custom OAuth parameters
+
+`greentic-oauth-core` now surfaces the optional PKCE verifier and any
+provider-specific parameters collected during initiation. Providers implementing
+`Provider::exchange_code` receive a `pkce_verifier: Option<&str>` hint so they
+can forward S256 verifiers to upstream token endpoints when required. The
+`OAuthFlowRequest` type also exposes an `extra_params` map for whitelisted
+authorization or token request tweaks (for example `prompt=select_account` or
+`login_hint=user@example.com`). The core crate does not validate these entries;
+brokers and SDKs are responsible for enforcing allow-lists appropriate for each
+provider.
+
 ## Self-describing OAuth
 
 The broker now publishes a discovery surface so agents and digital workers can enumerate providers, inspect tenant-scoped requirements, and kick off flows without out-of-band documentation. Every discovery response is cache-friendly (`ETag`, `Cache-Control: max-age=60`) and, when configured, signed with the broker's discovery key so callers can verify integrity.

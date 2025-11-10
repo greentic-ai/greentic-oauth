@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
@@ -164,8 +164,11 @@ pub struct OAuthFlowRequest {
     pub scopes: Vec<String>,
     pub code_challenge: Option<String>,
     pub code_challenge_method: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub extra_params: Vec<(String, String)>,
+    /// Provider-specific query/body parameters appended to authorize/token calls.
+    /// The core crate does not validate contents; callers must ensure the
+    /// receiving provider understands the supplied keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_params: Option<BTreeMap<String, String>>,
 }
 
 /// High-level result of building an authorization redirect.
@@ -245,6 +248,9 @@ mod tests {
 
     #[test]
     fn oauth_flow_request_roundtrip() {
+        let mut extras = BTreeMap::new();
+        extras.insert("prompt".to_string(), "select_account".to_string());
+        extras.insert("login_hint".to_string(), "user@example.com".to_string());
         let request = OAuthFlowRequest {
             tenant: example_tenant(),
             owner: example_owner(),
@@ -253,11 +259,28 @@ mod tests {
             scopes: vec!["openid".to_owned(), "profile".to_owned()],
             code_challenge: Some("challenge".to_owned()),
             code_challenge_method: Some("S256".to_owned()),
-            extra_params: Vec::new(),
+            extra_params: Some(extras),
         };
         let json = to_string(&request).expect("serialize request");
         let parsed: OAuthFlowRequest = from_str(&json).expect("deserialize request");
         assert_eq!(request, parsed);
+    }
+
+    #[test]
+    fn oauth_flow_request_defaults_extra_params() {
+        let request = OAuthFlowRequest {
+            tenant: example_tenant(),
+            owner: example_owner(),
+            redirect_uri: "https://example.com/callback".to_owned(),
+            state: None,
+            scopes: vec![],
+            code_challenge: None,
+            code_challenge_method: None,
+            extra_params: None,
+        };
+        let json = to_string(&request).expect("serialize request");
+        let parsed: OAuthFlowRequest = from_str(&json).expect("deserialize request");
+        assert!(parsed.extra_params.is_none());
     }
 
     #[test]

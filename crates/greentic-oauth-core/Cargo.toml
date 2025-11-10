@@ -1,6 +1,6 @@
 [package]
 name = "greentic-oauth-core"
-version.workspace = true
+version = "0.3.1"
 edition = "2024"
 description = "Shared OAuth types, token helpers, and provider primitives used by the Greentic broker and SDKs."
 license = "MIT"
@@ -17,14 +17,14 @@ mtls = []
 base64 = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true }
-jsonwebtoken = "9"
+jsonwebtoken = { workspace = true }
 serde = { workspace = true }
 schemars = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
-openidconnect = { version = "3.5", default-features = false, features = ["reqwest", "rustls-tls"] }
+openidconnect = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
-time = { version = "0.3", features = ["serde"] }
+time = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 anyhow = { workspace = true }
@@ -33,4 +33,4 @@ anyhow = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
-wiremock = "0.6"
+wiremock = { workspace = true }

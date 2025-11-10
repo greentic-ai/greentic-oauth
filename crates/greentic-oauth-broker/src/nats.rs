@@ -1,4 +1,4 @@
-use std::{pin::Pin, str::FromStr, sync::Arc};
+use std::{collections::BTreeMap, pin::Pin, str::FromStr, sync::Arc};
 
 use base64::Engine;
 use reqwest::Method;
@@ -146,6 +146,7 @@ where
         visibility,
         preset: None,
         prompt: None,
+        extra_params: BTreeMap::new(),
     };
 
     let (redirect_url, state_token, _flow_state) = process_start(ctx, &request)

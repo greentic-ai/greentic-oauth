@@ -6,8 +6,6 @@ use serde::Deserialize;
 use ureq::Agent;
 use url::Url;
 
-use crate::security::pkce::PkcePair;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TenantMode {
     Common,
@@ -146,7 +144,7 @@ impl MicrosoftProvider {
         &self,
         request: &OAuthFlowRequest,
         scopes: &[String],
-    ) -> Result<(Url, Option<String>), ProviderError> {
+    ) -> Result<Url, ProviderError> {
         let mut url = Url::parse(&self.auth_url).map_err(|err| {
             ProviderError::new(
                 ProviderErrorKind::Configuration,
@@ -156,17 +154,6 @@ impl MicrosoftProvider {
 
         let scope_string = scopes.join(" ");
 
-        let (challenge, method, verifier) = match (
-            request.code_challenge.clone(),
-            request.code_challenge_method.clone(),
-        ) {
-            (Some(challenge), Some(method)) => (challenge, method, None),
-            _ => {
-                let pair = PkcePair::generate();
-                (pair.challenge, "S256".to_string(), Some(pair.verifier))
-            }
-        };
-
         {
             let mut query = url.query_pairs_mut();
             query.append_pair("client_id", &self.client_id);
@@ -174,18 +161,30 @@ impl MicrosoftProvider {
             query.append_pair("redirect_uri", &request.redirect_uri);
             query.append_pair("scope", &scope_string);
             query.append_pair("response_mode", "query");
-            query.append_pair("code_challenge", &challenge);
-            query.append_pair("code_challenge_method", &method);
+            if let (Some(challenge), Some(method)) = (
+                request.code_challenge.clone(),
+                request.code_challenge_method.clone(),
+            ) {
+                query.append_pair("code_challenge", &challenge);
+                query.append_pair("code_challenge_method", &method);
+            }
 
             if let Some(state) = &request.state {
                 query.append_pair("state", state);
             }
-            for (key, value) in &request.extra_params {
-                query.append_pair(key, value);
+            if let Some(extra) = request.extra_params.as_ref() {
+                for (key, value) in extra {
+                    if matches!(
+                        key.as_str(),
+                        "prompt" | "login_hint" | "domain_hint" | "resource"
+                    ) {
+                        query.append_pair(key, value);
+                    }
+                }
             }
         }
 
-        Ok((url, verifier))
+        Ok(url)
     }
 
     fn execute_token_request(&self, params: Vec<(String, String)>) -> ProviderResult<TokenSet> {
@@ -237,7 +236,7 @@ impl Provider for MicrosoftProvider {
         request: &OAuthFlowRequest,
     ) -> ProviderResult<OAuthFlowResult> {
         let scopes = self.normalized_scopes(&request.scopes);
-        let (url, _verifier) = self.build_query(request, &scopes)?;
+        let url = self.build_query(request, &scopes)?;
 
         Ok(OAuthFlowResult {
             redirect_url: url.to_string(),
@@ -254,12 +253,11 @@ impl Provider for MicrosoftProvider {
     ) -> ProviderResult<TokenSet> {
         let scope_list = self.normalized_scopes(&_claims.scopes);
         let scope_owned = scope_list.join(" ");
-        let code_owned = code.to_string();
         let mut params = vec![
             ("client_id".to_string(), self.client_id.clone()),
             ("client_secret".to_string(), self.client_secret.clone()),
             ("grant_type".to_string(), "authorization_code".to_string()),
-            ("code".to_string(), code_owned),
+            ("code".to_string(), code.to_string()),
             ("redirect_uri".to_string(), self.redirect_uri.clone()),
             ("scope".to_string(), scope_owned),
         ];
@@ -431,7 +429,7 @@ mod tests {
             scopes: vec!["User.Read".into(), "offline_access".into()],
             code_challenge: Some("challenge123".into()),
             code_challenge_method: Some("S256".into()),
-            extra_params: Vec::new(),
+            extra_params: None,
         }
     }
 

@@ -1,4 +1,9 @@
 //! Greentic OAuth core primitives shared across services.
+//!
+//! The crate exposes a consistent provider interface, including optional PKCE
+//! verifier forwarding and pass-through `extra_params` so higher-level brokers
+//! can enrich authorization and token requests for specific providers without
+//! reinventing serialization concerns.
 
 pub mod constants;
 pub mod oidc;
