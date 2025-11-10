@@ -113,10 +113,12 @@ mod tests {
             preset.authorize_url,
             "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
         );
-        assert!(preset
-            .default_scopes
-            .iter()
-            .any(|scope| scope == "offline_access"));
+        assert!(
+            preset
+                .default_scopes
+                .iter()
+                .any(|scope| scope == "offline_access")
+        );
     }
 
     #[test]
