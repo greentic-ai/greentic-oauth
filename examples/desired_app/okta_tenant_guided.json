@@ -1,0 +1,18 @@
+{
+  "tenant": "acme",
+  "desired": {
+    "display_name": "Acme Okta Binding",
+    "redirect_uris": [],
+    "scopes": ["openid", "profile", "email", "offline_access"],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": {
+      "issuer": "https://acme.okta.com/oauth2/default",
+      "authz_server_id": "default",
+      "client_id": "TENANT_CLIENT_ID",
+      "client_secret": "TENANT_CLIENT_SECRET",
+      "refresh_token": "TENANT_REFRESH_TOKEN"
+    }
+  }
+}

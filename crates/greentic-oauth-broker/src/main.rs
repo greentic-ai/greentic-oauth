@@ -2,7 +2,10 @@ use std::{net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use axum::Router;
+#[cfg(feature = "admin-ms")]
+use greentic_oauth_broker::admin::providers::microsoft;
 use greentic_oauth_broker::{
+    admin::{AdminRegistry, collect_enabled_provisioners, consent::AdminConsentStore},
     auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{NoopPublisher, SharedPublisher},
@@ -112,6 +115,8 @@ async fn run() -> Result<()> {
             .ok()
             .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
             .unwrap_or(false);
+    let admin_registry = Arc::new(AdminRegistry::new(collect_enabled_provisioners()));
+    let admin_consent = Arc::new(AdminConsentStore::new(Duration::from_secs(600)));
     let context = http::AppContext {
         providers,
         security,
@@ -127,8 +132,13 @@ async fn run() -> Result<()> {
         enable_test_endpoints,
         sessions,
         oauth_base_url,
+        admin_registry,
+        admin_consent,
     };
     let shared_context = Arc::new(context);
+
+    #[cfg(feature = "admin-ms")]
+    let mut teams_worker = microsoft::spawn_teams_worker(shared_context.clone());
 
     #[cfg(feature = "refresh-worker")]
     let mut refresh_handle = Some(greentic_oauth_broker::refresh::spawn_refresh_worker(
@@ -162,6 +172,11 @@ async fn run() -> Result<()> {
     server.await?;
 
     if let Some(handle) = nats_handle {
+        handle.abort();
+    }
+
+    #[cfg(feature = "admin-ms")]
+    if let Some(handle) = teams_worker.take() {
         handle.abort();
     }
 

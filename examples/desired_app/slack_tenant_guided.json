@@ -1,0 +1,17 @@
+{
+  "tenant": "acme",
+  "desired": {
+    "display_name": "Acme Slack App",
+    "redirect_uris": [],
+    "scopes": [],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": {
+      "client_id": "SLACK_CLIENT_ID",
+      "client_secret": "SLACK_CLIENT_SECRET",
+      "signing_secret": "SLACK_SIGNING_SECRET",
+      "bot_token": "SLACK_BOT_TOKEN"
+    }
+  }
+}

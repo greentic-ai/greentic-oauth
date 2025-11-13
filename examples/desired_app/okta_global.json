@@ -1,0 +1,15 @@
+{
+  "tenant": "global",
+  "desired": {
+    "display_name": "Greentic OAuth (Okta Global)",
+    "redirect_uris": [
+      "https://localhost:8080/admin/oauth/global/callback/okta",
+      "https://localhost:8080/admin/oauth/tenant/callback/okta"
+    ],
+    "scopes": ["openid", "profile", "email", "offline_access"],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": null
+  }
+}

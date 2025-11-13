@@ -1,0 +1,15 @@
+{
+  "tenant": "global",
+  "desired": {
+    "display_name": "Greentic Messaging (Global Teams)",
+    "redirect_uris": [
+      "https://localhost:8080/admin/oauth/global/callback/teams",
+      "https://localhost:8080/admin/oauth/tenant/callback/teams"
+    ],
+    "scopes": ["offline_access", "openid", "profile"],
+    "audience": "https://graph.microsoft.com",
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": null
+  }
+}

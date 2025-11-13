@@ -1,11 +1,11 @@
 # Local Checks
 
-`ci/local_check.sh` mirrors the repository’s GitHub Actions workflow so you can sanity check the workspace before pushing.
+`ci/check_local.sh` mirrors the repository’s GitHub Actions workflow so you can sanity check the workspace before pushing. The legacy `ci/local_check.sh` simply forwards to the new entrypoint for backwards compatibility.
 
 ## Usage
 
 ```bash
-ci/local_check.sh
+ci/check_local.sh
 ```
 
 ### Helpful toggles
@@ -17,5 +17,5 @@ ci/local_check.sh
 Combine them when needed, for example:
 
 ```bash
-LOCAL_CHECK_ONLINE=0 LOCAL_CHECK_STRICT=1 ci/local_check.sh
+LOCAL_CHECK_ONLINE=0 LOCAL_CHECK_STRICT=1 ci/check_local.sh
 ```

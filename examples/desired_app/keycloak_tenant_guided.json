@@ -1,0 +1,16 @@
+{
+  "tenant": "acme",
+  "desired": {
+    "display_name": "Acme Keycloak Binding",
+    "redirect_uris": [],
+    "scopes": ["openid", "profile"],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": {
+      "client_id": "acme-service-client",
+      "client_secret": "TENANT_KEYCLOAK_CLIENT_SECRET",
+      "issuer": "https://kc.example.com/realms/acme"
+    }
+  }
+}

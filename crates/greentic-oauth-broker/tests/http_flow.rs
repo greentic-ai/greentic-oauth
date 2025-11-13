@@ -15,6 +15,7 @@ use axum::{
 use hyper::{Method, Request};
 
 use greentic_oauth_broker::{
+    admin::{AdminRegistry, consent::AdminConsentStore},
     auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, NoopPublisher, PublishError, SharedPublisher},
@@ -248,6 +249,8 @@ fn build_context(
         enable_test_endpoints,
         sessions,
         oauth_base_url: Some(oauth_base_url),
+        admin_registry: Arc::new(AdminRegistry::default()),
+        admin_consent: Arc::new(AdminConsentStore::new(Duration::from_secs(600))),
     })
 }
 

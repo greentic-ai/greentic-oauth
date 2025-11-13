@@ -6,6 +6,7 @@
 //! reinventing serialization concerns.
 
 pub mod constants;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod oidc;
 pub mod pkce;
 pub mod provider;
@@ -16,6 +17,7 @@ pub mod verifier;
 #[cfg(feature = "schemas")]
 pub mod schemas;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use oidc::{IdClaims, OidcClient, OidcError, PkceState};
 pub use pkce::PkcePair;
 pub use provider::{Provider, ProviderError, ProviderResult};

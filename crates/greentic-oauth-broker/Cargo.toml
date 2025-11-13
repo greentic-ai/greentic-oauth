@@ -6,11 +6,27 @@ description = "Multi-tenant OAuth broker exposing HTTP, NATS, and discovery APIs
 license = "MIT"
 
 [features]
-default = []
+default = ["admin-ms"]
 network-tests = []
 aws_kms = []
 gcp_kms = []
 refresh-worker = []
+admin-ms = []
+admin-okta = []
+admin-auth0 = []
+admin-keycloak = []
+admin-google = []
+admin-github = []
+admin-slack = []
+admin-all = [
+    "admin-ms",
+    "admin-okta",
+    "admin-auth0",
+    "admin-keycloak",
+    "admin-google",
+    "admin-github",
+    "admin-slack",
+]
 
 [dependencies]
 greentic-oauth-core = { path = "../greentic-oauth-core", version = "=0.3.1" }
@@ -47,6 +63,9 @@ once_cell = { workspace = true }
 uuid = { workspace = true }
 p256 = { workspace = true }
 ulid = { workspace = true }
+clap = { workspace = true }
+time = { workspace = true }
+subtle = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -55,3 +74,8 @@ jsonschema = { workspace = true }
 hyper = { workspace = true }
 http-body-util = { workspace = true }
 insta = { workspace = true }
+wiremock = { workspace = true }
+
+[[bin]]
+name = "greentic-oauth-admin"
+path = "src/bin/admin.rs"

@@ -16,6 +16,7 @@ use axum::{
 };
 use base64::Engine as _;
 use greentic_oauth_broker::{
+    admin::{AdminRegistry, consent::AdminConsentStore},
     auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::{EventPublisher, PublishError, SharedPublisher},
@@ -441,6 +442,8 @@ fn build_context(
         enable_test_endpoints: false,
         sessions,
         oauth_base_url: Some(oauth_base_url),
+        admin_registry: Arc::new(AdminRegistry::default()),
+        admin_consent: Arc::new(AdminConsentStore::new(Duration::from_secs(600))),
     });
 
     (context, refresh_counter, publisher_impl)

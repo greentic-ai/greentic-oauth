@@ -1,0 +1,12 @@
+{
+  "tenant": "acme",
+  "desired": {
+    "display_name": "Greentic Broker",
+    "redirect_uris": ["https://broker.example.com/callback"],
+    "scopes": ["User.Read", "offline_access"],
+    "audience": "https://graph.microsoft.com",
+    "creds": {"kind": "client_secret", "rotate_days": 90},
+    "webhooks": null,
+    "extra_params": {"prompt": "select_account"}
+  }
+}

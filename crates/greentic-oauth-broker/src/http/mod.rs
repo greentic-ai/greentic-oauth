@@ -28,6 +28,7 @@ use tracing::{Level, Span};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{
+    admin::{AdminRegistry, admin_router, consent::AdminConsentStore},
     auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     events::SharedPublisher,
@@ -57,6 +58,8 @@ where
     pub enable_test_endpoints: bool,
     pub sessions: Arc<AuthSessionStore>,
     pub oauth_base_url: Option<Arc<Url>>,
+    pub admin_registry: Arc<AdminRegistry>,
+    pub admin_consent: Arc<AdminConsentStore>,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;
@@ -122,6 +125,11 @@ where
             "/oauth/discovery/{tenant}/providers/{provider_id}/blueprint",
             post(handlers::discovery::post_blueprint::<S>),
         )
+        .route(
+            "/ingress/ms/graph/notify/{tenant}",
+            get(handlers::ingress::graph_validation).post(handlers::ingress::graph_notify::<S>),
+        )
+        .nest("/admin", admin_router::<S>())
         .layer(
             TraceLayer::new_for_http()
                 .on_request(DefaultOnRequest::new().level(Level::INFO))

@@ -1,0 +1,15 @@
+{
+  "tenant": "global",
+  "desired": {
+    "display_name": "Greentic Messaging (Auth0)",
+    "redirect_uris": [
+      "https://localhost:8080/admin/oauth/global/callback/auth0",
+      "https://localhost:8080/admin/oauth/tenant/callback/auth0"
+    ],
+    "scopes": ["openid", "profile", "offline_access"],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": null
+  }
+}

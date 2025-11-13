@@ -35,6 +35,140 @@ provider. The broker sanitises and allow-lists the keys for each integration
 `BROKER_ALLOW_EXTRA_PARAMS=0` in deployments that must reject all dynamic query
 overrides—the handler will log and drop any user-supplied values in that mode.
 
+## Admin provisioning (preview)
+
+Tenant administrators can bootstrap OAuth applications directly from the broker
+via the `/admin/providers/*` endpoints or the `greentic-oauth-admin` CLI.
+Provisioners advertise their `ProvisionCaps` so callers know whether app
+creation, redirect management, secret generation, webhook installation, or
+scope grants happen automatically or require a guided hand-off. All writes flow
+through greentic-secrets using the standard key layout:
+
+| Scope | Path prefix | Example keys |
+| --- | --- | --- |
+| Global | `messaging/global/{provider}` | `client_id`, `client_secret`, `app_config.json` |
+| Tenant | `messaging/tenant/{tenant}/{provider}` | `refresh_token`, `issuer`, `webhook_secret/foo` |
+
+### Supported providers & capability matrix
+
+| Provider (feature flag) | Mode | Capabilities (app/redirect/secret/webhook/scope) | Live-mode env |
+| --- | --- | --- | --- |
+| Microsoft Entra ID (`admin-ms`) | Automated | ✅/✅/✅/✅/✅ | `PUBLIC_HOST`, `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET` or `MS_CLIENT_CERT_PFX` + `MS_CLIENT_CERT_PASSWORD`, `MS_TEAMS_APP_ID`, `MS_WEBHOOK_NOTIFICATION_URL` |
+| Okta (`admin-okta`) | Automated global / guided tenant | ✅/✅/✅/❌/✅ | `OKTA_BASE_URL`, `OKTA_API_TOKEN`, optional per-tenant `OKTA_TENANT_BASE_URL`, `OKTA_TENANT_API_TOKEN` |
+| Auth0 (`admin-auth0`) | Automated global / guided tenant | ✅/✅/✅/❌/✅ | `AUTH0_DOMAIN`, `AUTH0_MGMT_CLIENT_ID`, `AUTH0_MGMT_CLIENT_SECRET` |
+| Keycloak (`admin-keycloak`) | Automated global / guided tenant | ✅/✅/✅/❌/✅ | `KC_BASE_URL`, `KC_REALM`, `KC_CLIENT_ID`, `KC_CLIENT_SECRET` |
+| Google (`admin-google`) | Guided | ❌/❌/❌/❌/❌ | — |
+| GitHub (`admin-github`) | Guided | ❌/❌/❌/⚠️/❌ | — |
+| Slack (`admin-slack`) | Guided | ❌/❌/❌/✅/❌ | — |
+
+If the required environment variables are missing the provisioner transparently
+falls back to mock mode so CI/tests remain hermetic.
+
+### CLI workflow
+
+The admin CLI wraps the HTTP endpoints:
+
+```bash
+# List compiled-in provisioners and their capabilities
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- providers
+
+# Start an admin authorization flow (automated providers only)
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- \
+  start --provider msgraph --tenant global
+
+# Apply a desired state document (see examples/desired_app/*.json)
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- \
+  ensure --provider okta --tenant acme \
+  --file examples/desired_app/okta_tenant_guided.json
+
+# Preview changes without writing secrets or patching remote apps
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- \
+  plan --provider okta --tenant acme \
+  --file examples/desired_app/okta_tenant_guided.json
+```
+
+`ensure` accepts the JSON payload described by `DesiredAppRequest`. For guided
+providers, populate the resulting OAuth credentials under
+`desired.extra_params`:
+
+| Provider | Required keys | Optional keys |
+| --- | --- | --- |
+| Google | `client_id`, `client_secret` | — |
+| GitHub | `client_id`, `client_secret` | `webhook_secret` |
+| Slack | `client_id`, `client_secret`, `signing_secret` | `bot_token` |
+| Okta tenant | `issuer`, `client_id`, `client_secret` | `refresh_token`, `authz_server_id` |
+| Auth0 tenant | `issuer`, `client_id`, `client_secret` | `refresh_token`, `audience` |
+| Microsoft tenant | use `/admin/messaging/teams` spec; see Teams section below | — |
+| Keycloak tenant | `client_id`, `client_secret` | `issuer`, `refresh_token` |
+
+The broker sanitises and stores those values under
+`messaging/tenant/{tenant}/{provider}/*`, making them available to the runtime
+token handlers without exposing secrets in logs or responses. Audit events fire
+for every secret write and resource change, so the operator trail remains
+complete even when provisioning happens through the CLI.
+
+**Microsoft Teams tenants**: describe each tenant’s desired state in a spec file
+and send it through the dedicated Teams endpoints (or the
+`greentic-oauth-admin teams ...` subcommands). The schema matches
+[`examples/desired_app/teams_tenant.json`](examples/desired_app/teams_tenant.json):
+
+```json
+{
+  "tenant_key": "acme",
+  "provider_tenant_id": "00000000-0000-0000-0000-000000000000",
+  "requested_scopes": ["ChannelMessage.Read.Group"],
+  "resources": [
+    { "kind": "team", "id": "19:abc@thread.tacv2", "display_name": "Support" },
+    { "kind": "channel", "id": "19:abc@thread.tacv2|19:general", "display_name": "General" }
+  ],
+  "credential_policy": { "ClientSecret": { "rotate_days": 180 } }
+}
+```
+
+Plan/dry-run the diff:
+
+```
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- \
+  teams plan --tenant acme \
+  --file examples/desired_app/teams_tenant.json
+```
+
+Apply it (install app, probe RSC, reconcile subscriptions):
+
+```
+cargo run -p greentic-oauth-broker --bin greentic-oauth-admin -- \
+  teams ensure --tenant acme \
+  --file examples/desired_app/teams_tenant.json
+```
+
+The broker stores the normalized resources at
+`messaging/tenant/{tenant}/teams/teams.json`, tracks active tenants in
+`messaging/global/teams/tenants.json`, and reacts to Microsoft Graph
+notifications received at `/ingress/ms/graph/notify/{tenant}`. Set
+`MS_WEBHOOK_NOTIFICATION_URL` (or ensure `PUBLIC_HOST` is resolvable) so the
+provisioner can register those subscriptions.
+
+The CLI mirrors the REST endpoints:
+
+```
+# preview changes with a summary table + JSON payload
+greentic-oauth-admin teams plan --tenant acme --file teams.json
+
+# apply the desired state
+greentic-oauth-admin teams ensure --tenant acme --file teams.json
+
+# fetch the currently stored spec (for editing)
+greentic-oauth-admin teams get-spec --tenant acme
+
+# install or remove a single team without touching other teams
+greentic-oauth-admin teams install --tenant acme --team-id 19:team
+greentic-oauth-admin teams remove-team --tenant acme --team-id 19:team
+```
+
+`teams plan` now prints a quick summary (team action plus channel-level
+subscriptions) before dumping the full JSON plan. The REST responses are the
+same shape, so runners can consume the structured `TeamsPlanReport` directly.
+
 ## Self-describing OAuth
 
 The broker now publishes a discovery surface so agents and digital workers can enumerate providers, inspect tenant-scoped requirements, and kick off flows without out-of-band documentation. Every discovery response is cache-friendly (`ETag`, `Cache-Control: max-age=60`) and, when configured, signed with the broker's discovery key so callers can verify integrity.

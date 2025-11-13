@@ -1,0 +1,20 @@
+{
+  "tenant_key": "acme",
+  "provider_tenant_id": "00000000-0000-0000-0000-000000000000",
+  "requested_scopes": ["ChannelMessage.Read.Group"],
+  "resources": [
+    {
+      "kind": "team",
+      "id": "19:abc123team@thread.tacv2",
+      "display_name": "Support"
+    },
+    {
+      "kind": "channel",
+      "id": "19:abc123team@thread.tacv2|19:general",
+      "display_name": "General"
+    }
+  ],
+  "credential_policy": {
+    "ClientSecret": { "rotate_days": 180 }
+  }
+}

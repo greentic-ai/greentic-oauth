@@ -10,6 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ed25519_dalek::SigningKey as Ed25519SigningKey;
 use greentic_oauth_broker::{
+    admin::{AdminRegistry, consent::AdminConsentStore},
     auth::AuthSessionStore,
     config::{ProviderRegistry, RedirectGuard},
     discovery::{ProviderDescriptor, load_provider_descriptor},
@@ -129,6 +130,8 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         enable_test_endpoints: false,
         sessions,
         oauth_base_url: Some(oauth_base_url),
+        admin_registry: Arc::new(AdminRegistry::default()),
+        admin_consent: Arc::new(AdminConsentStore::new(Duration::from_secs(600))),
     })
 }
 

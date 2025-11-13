@@ -1,0 +1,16 @@
+{
+  "tenant": "acme",
+  "desired": {
+    "display_name": "Acme GitHub App",
+    "redirect_uris": [],
+    "scopes": [],
+    "audience": null,
+    "creds": { "ClientSecret": { "rotate_days": 180 } },
+    "webhooks": null,
+    "extra_params": {
+      "client_id": "GITHUB_CLIENT_ID",
+      "client_secret": "GITHUB_CLIENT_SECRET",
+      "webhook_secret": "GITHUB_WEBHOOK_SECRET"
+    }
+  }
+}
