@@ -54,7 +54,7 @@ impl KeycloakProvisioner {
         Self {
             public_host,
             directory,
-            consent_http: Arc::new(ReqwestKeycloakConsentHttpClient::default()),
+            consent_http: Arc::new(ReqwestKeycloakConsentHttpClient),
         }
     }
 
@@ -63,7 +63,7 @@ impl KeycloakProvisioner {
         Self {
             public_host: "localhost:8080".into(),
             directory,
-            consent_http: Arc::new(ReqwestKeycloakConsentHttpClient::default()),
+            consent_http: Arc::new(ReqwestKeycloakConsentHttpClient),
         }
     }
 
@@ -796,7 +796,7 @@ struct ReqwestKeycloakConsentHttpClient;
 
 impl KeycloakConsentHttpClient for ReqwestKeycloakConsentHttpClient {
     fn exchange_code(&self, url: &str, form: &[(String, String)]) -> Result<serde_json::Value> {
-        let owned_form: Vec<(String, String)> = form.iter().cloned().collect();
+        let owned_form: Vec<(String, String)> = form.to_vec();
         let response = HttpClient::builder()
             .timeout(Duration::from_secs(15))
             .build()

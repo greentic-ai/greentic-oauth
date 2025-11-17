@@ -54,7 +54,7 @@ impl Auth0Provisioner {
         Self {
             public_host,
             directory,
-            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient::default()),
+            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient),
         }
     }
 
@@ -63,7 +63,7 @@ impl Auth0Provisioner {
         Self {
             public_host: "localhost:8080".into(),
             directory,
-            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient::default()),
+            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient),
         }
     }
 
@@ -797,7 +797,7 @@ struct ReqwestAuth0ConsentHttpClient;
 
 impl Auth0ConsentHttpClient for ReqwestAuth0ConsentHttpClient {
     fn exchange_code(&self, url: &str, form: &[(String, String)]) -> Result<Value> {
-        let owned_form: Vec<(String, String)> = form.iter().cloned().collect();
+        let owned_form: Vec<(String, String)> = form.to_vec();
         let response = HttpClient::builder()
             .timeout(Duration::from_secs(15))
             .build()
