@@ -7,7 +7,7 @@ license = "MIT"
 
 [dependencies]
 axum = { workspace = true }
-base64 = { workspace = true }
+base64 = "0.22"
 greentic-oauth-core = { workspace = true }
 hmac = { workspace = true }
 serde = { workspace = true }

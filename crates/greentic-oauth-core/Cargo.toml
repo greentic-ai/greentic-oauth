@@ -14,7 +14,7 @@ jar = []
 mtls = []
 
 [dependencies]
-base64 = { workspace = true }
+base64 = "0.22"
 rand = { workspace = true }
 sha2 = { workspace = true }
 jsonwebtoken = { workspace = true }
