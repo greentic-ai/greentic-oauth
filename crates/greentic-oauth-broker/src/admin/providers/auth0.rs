@@ -28,6 +28,7 @@ const AUTH0_CONSENT_SCOPES: &[&str] = &["openid", "profile", "offline_access"];
 pub struct Auth0Provisioner {
     public_host: String,
     directory: Arc<dyn Auth0Directory>,
+    consent_http: Arc<dyn Auth0ConsentHttpClient>,
 }
 
 impl Default for Auth0Provisioner {
@@ -53,6 +54,7 @@ impl Auth0Provisioner {
         Self {
             public_host,
             directory,
+            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient::default()),
         }
     }
 
@@ -61,6 +63,19 @@ impl Auth0Provisioner {
         Self {
             public_host: "localhost:8080".into(),
             directory,
+            consent_http: Arc::new(ReqwestAuth0ConsentHttpClient::default()),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_directory_and_http(
+        directory: Arc<dyn Auth0Directory>,
+        consent_http: Arc<dyn Auth0ConsentHttpClient>,
+    ) -> Self {
+        Self {
+            public_host: "localhost:8080".into(),
+            directory,
+            consent_http,
         }
     }
 
@@ -373,20 +388,10 @@ impl AdminProvisioner for Auth0Provisioner {
         }
 
         let token_url = format!("{}/oauth/token", normalize_issuer(issuer)?);
-        let response = HttpClient::builder()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .context("failed to build Auth0 consent HTTP client")?
-            .post(token_url)
-            .form(&form)
-            .send()
+        let token_body = self
+            .consent_http
+            .exchange_code(&token_url, &form)
             .context("Auth0 token request failed")?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            bail!("Auth0 token request failed {status}: {body}");
-        }
-        let token_body: Value = response.json().context("invalid Auth0 token response")?;
         let refresh_token = token_body
             .get("refresh_token")
             .and_then(|v| v.as_str())
@@ -783,6 +788,35 @@ impl Auth0ApiClient {
     }
 }
 
+trait Auth0ConsentHttpClient: Send + Sync {
+    fn exchange_code(&self, url: &str, form: &[(String, String)]) -> Result<Value>;
+}
+
+#[derive(Default)]
+struct ReqwestAuth0ConsentHttpClient;
+
+impl Auth0ConsentHttpClient for ReqwestAuth0ConsentHttpClient {
+    fn exchange_code(&self, url: &str, form: &[(String, String)]) -> Result<Value> {
+        let owned_form: Vec<(String, String)> = form.iter().cloned().collect();
+        let response = HttpClient::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .context("failed to build Auth0 consent HTTP client")?
+            .post(url)
+            .form(&owned_form)
+            .send()
+            .context("Auth0 token request failed")?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            bail!("Auth0 token request failed {status}: {body}");
+        }
+        response
+            .json::<Value>()
+            .context("invalid Auth0 token response")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -796,10 +830,6 @@ mod tests {
     };
     use serde_json::Value;
     use std::{collections::HashMap, sync::Mutex, time::Duration};
-    use wiremock::{
-        Mock, MockServer, ResponseTemplate,
-        matchers::{body_string_contains, method, path},
-    };
 
     #[derive(Default)]
     struct MemoryStore {
@@ -854,6 +884,37 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct StubConsentHttp {
+        last_request: Mutex<Option<(String, Vec<(String, String)>)>>,
+        refresh_token: String,
+    }
+
+    impl StubConsentHttp {
+        fn new(refresh_token: &str) -> Self {
+            Self {
+                refresh_token: refresh_token.to_string(),
+                ..Default::default()
+            }
+        }
+
+        fn take_request(&self) -> Option<(String, Vec<(String, String)>)> {
+            self.last_request.lock().unwrap().take()
+        }
+    }
+
+    impl Auth0ConsentHttpClient for StubConsentHttp {
+        fn exchange_code(&self, url: &str, form: &[(String, String)]) -> Result<Value> {
+            assert!(
+                url.ends_with("/oauth/token"),
+                "expected auth0 token endpoint, got {url}"
+            );
+            *self.last_request.lock().unwrap() =
+                Some((url.to_string(), form.iter().cloned().collect()));
+            Ok(json!({ "refresh_token": self.refresh_token }))
+        }
+    }
+
     #[test]
     fn ensures_global_app() {
         let directory: Arc<dyn Auth0Directory> = Arc::new(MockAuth0Directory::default());
@@ -897,19 +958,8 @@ mod tests {
 
     #[tokio::test]
     async fn admin_consent_flow_persists_refresh_token() {
-        let server: MockServer = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/oauth/token"))
-            .and(body_string_contains("grant_type=authorization_code"))
-            .and(body_string_contains("code=CODE123"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "refresh_token": "rt-123"
-            })))
-            .mount(&server)
-            .await;
-
         let secrets = MemoryStore::default();
-        let issuer = format!("{}/", server.uri().trim_end_matches('/'));
+        let issuer = "https://tenant.eu.auth0.com/".to_string();
         let tenant = "acme";
         for (key, value) in [
             ("issuer", issuer.as_str()),
@@ -920,7 +970,11 @@ mod tests {
             write_string_secret_at(&secrets, &path, value).unwrap();
         }
 
-        let provisioner = Auth0Provisioner::with_directory(Arc::new(MockAuth0Directory::default()));
+        let consent_http = Arc::new(StubConsentHttp::new("rt-123"));
+        let provisioner = Auth0Provisioner::with_directory_and_http(
+            Arc::new(MockAuth0Directory::default()),
+            consent_http.clone(),
+        );
         let consent_store = AdminConsentStore::new(Duration::from_secs(60));
         let start_ctx = AdminActionContext::new(&secrets, &consent_store);
         let start_url = provisioner
@@ -942,6 +996,15 @@ mod tests {
                 &[("state".into(), state), ("code".into(), "CODE123".into())],
             )
             .expect("callback");
+
+        let recorded = consent_http.take_request().expect("http call recorded");
+        assert!(recorded.0.starts_with(issuer.trim_end_matches('/')));
+        assert!(
+            recorded
+                .1
+                .iter()
+                .any(|(k, v)| k == "code" && v == "CODE123")
+        );
 
         let refresh_path = messaging_tenant_path(tenant, PROVIDER_KEY, "refresh_token");
         assert_eq!(

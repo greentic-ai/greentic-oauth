@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Aligns the crate version with the overall 0.4 Greentic OAuth release train and
+  the updated `greentic-types`/`greentic-telemetry` 0.4 dependencies.
+
 ## 0.3.1
 
 - Added optional `pkce_verifier` forwarding to `Provider::exchange_code`.

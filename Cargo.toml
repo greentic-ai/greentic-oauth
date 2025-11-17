@@ -11,15 +11,15 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.3"
+version = "0.4.0"
 edition = "2024"
 
 [workspace.dependencies]
-greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "=0.3.1" }
-greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "=0.3.2" }
-greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "=0.3.2" }
-greentic-telemetry = { version = "0.3" }
-greentic-types = { version = "0.3", features = ["telemetry-autoinit"] }
+greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.4" }
+greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.4" }
+greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.4" }
+greentic-telemetry = { version = "0.4" }
+greentic-types = { version = "0.4", features = ["telemetry-autoinit"] }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 tracing-opentelemetry = "0.32"
 ulid = "1"
@@ -28,14 +28,14 @@ anyhow = "1"
 async-nats = "0.45"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "http1", "tokio"] }
-base64 = "0.22"
+base64 = "0"
 base64ct = "1"
 ed25519-dalek = { version = "2", features = ["std"] }
 futures-util = "0.3"
 hmac = "0.12"
 http-body-util = "0.1"
 hyper = "1"
-jsonschema = "0.33"
+jsonschema = "0"
 once_cell = "1"
 p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
 rand = "0.9"
