@@ -10,6 +10,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: /tmp/greentic-target
+      CARGO_TERM_COLOR: always
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,9 +30,13 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git
-            target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Ensure clean workspace artifacts
+        run: |
+          rm -rf target
+          mkdir -p "$CARGO_TARGET_DIR"
 
       - name: Cargo fetch
         run: cargo fetch
@@ -45,3 +52,9 @@ jobs:
 
       - name: Cargo test
         run: cargo test --workspace --all-features
+
+      - name: Cleanup build artifacts
+        if: always()
+        run: |
+          rm -rf "$CARGO_TARGET_DIR"
+          rm -rf target
