@@ -883,9 +883,11 @@ mod tests {
         }
     }
 
+    type RequestCapture = (String, Vec<(String, String)>);
+
     #[derive(Default)]
     struct StubConsentHttp {
-        last_request: Mutex<Option<(String, Vec<(String, String)>)>>,
+        last_request: Mutex<Option<RequestCapture>>,
         refresh_token: String,
     }
 
@@ -897,7 +899,7 @@ mod tests {
             }
         }
 
-        fn take_request(&self) -> Option<(String, Vec<(String, String)>)> {
+        fn take_request(&self) -> Option<RequestCapture> {
             self.last_request.lock().unwrap().take()
         }
     }
@@ -908,8 +910,7 @@ mod tests {
                 url.ends_with("/protocol/openid-connect/token"),
                 "expected keycloak token endpoint, got {url}"
             );
-            *self.last_request.lock().unwrap() =
-                Some((url.to_string(), form.iter().cloned().collect()));
+            *self.last_request.lock().unwrap() = Some((url.to_string(), form.to_vec()));
             Ok(json!({ "refresh_token": self.refresh_token }))
         }
     }

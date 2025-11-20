@@ -332,6 +332,8 @@ interface broker {
 
 Supporting types include `owner-kind` (`user` / `service`), optional `visibility`, and `signed-fetch-request` with base64 payloads. The SDK host (`BrokerHost`) adapts these calls to the HTTP/NATS broker endpoints.
 
+An additional generic OAuth host surface lives in [`crates/oauth-wit/greentic.oauth-broker@1.0.0.wit`](crates/oauth-wit/greentic.oauth-broker@1.0.0.wit). It exposes the minimal broker functions (`get-consent-url`, `exchange-code`, `get-token`) with provider IDs, subjects, scopes, and redirect paths only—no provider-specific fields are baked into the interface.
+
 ## Multi-tenant & Team Model
 
 - **Environment (`env`)** – logical deployment (e.g., `prod`, `staging`).

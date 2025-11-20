@@ -43,11 +43,11 @@ step() {
 run_or_skip() {
   local desc="$1"
   shift
-  if "$@"; then
+  local status=0
+  "$@" || status=$?
+  if [ "$status" -eq 0 ]; then
     return 0
   fi
-
-  local status=$?
   if [ "$status" -eq "$SKIP_EXIT" ]; then
     echo "[skip] $desc"
     SKIPPED_STEPS+=("$desc")
@@ -204,8 +204,10 @@ run_wit_validation() {
   if [ ! -d "$ROOT" ]; then
     return "$SKIP_EXIT"
   fi
-  local wit_files
-  mapfile -t wit_files < <(find "$ROOT" -type f -name '*.wit' -print | sort)
+  local -a wit_files=()
+  while IFS= read -r wit; do
+    wit_files+=("$wit")
+  done < <(find "$ROOT" -type f -name '*.wit' -print | sort)
   if [ "${#wit_files[@]}" -eq 0 ]; then
     echo "[info] No WIT files detected."
     return "$SKIP_EXIT"

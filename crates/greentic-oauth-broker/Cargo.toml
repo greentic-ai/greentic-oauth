@@ -56,6 +56,7 @@ webpki-roots = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 greentic-telemetry.workspace = true
 greentic-types = { workspace = true }
+greentic-interfaces = { workspace = true, default-features = false, features = ["oauth-broker-v1"] }
 opentelemetry = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 anyhow = { workspace = true }

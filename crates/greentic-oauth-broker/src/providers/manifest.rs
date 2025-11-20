@@ -235,7 +235,7 @@ fn validate_manifest(schema: &Validator, path: &Path, value: &Value) -> Result<(
     let errors: Vec<_> = schema
         .iter_errors(value)
         .map(|err| {
-            let pointer = err.instance_path.to_string();
+            let pointer = err.instance_path().to_string();
             if pointer.is_empty() {
                 err.to_string()
             } else {
