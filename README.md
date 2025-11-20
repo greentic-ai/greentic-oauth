@@ -313,24 +313,7 @@ The broker optionally connects to NATS (`NATS_URL`, `NATS_TLS_DOMAIN`). Requests
 
 ## WIT Contract
 
-The WASM component interface lives in [`crates/oauth-wit/greentic.oauth@0.1.0.wit`](crates/oauth-wit/greentic.oauth@0.1.0.wit) and is bound by the Rust SDK (`crates/greentic-oauth-sdk/src/wit.rs`). Key definitions:
-
-```wit
-package greentic:oauth@0.1.0;
-
-interface broker {
-    health-check: func() -> string
-    initiate-auth: func(request: initiate-request) -> initiate-response
-    await-result: func(flow-id: string, timeout-ms: option<u64>) -> flow-result
-    get-access-token: func(token-handle: string, force-refresh: bool) -> record {
-        access-token: string,
-        expires-at: u64,
-    }
-    signed-fetch: func(request: signed-fetch-request) -> signed-fetch-response
-}
-```
-
-Supporting types include `owner-kind` (`user` / `service`), optional `visibility`, and `signed-fetch-request` with base64 payloads. The SDK host (`BrokerHost`) adapts these calls to the HTTP/NATS broker endpoints.
+The WASM component interface now uses [`crates/oauth-wit/greentic.oauth-broker@1.0.0.wit`](crates/oauth-wit/greentic.oauth-broker@1.0.0.wit) and is bound by the SDK when the `wasm-host` feature is enabled. The host adapter (`oauth_broker_wit::BrokerHost`) delegates WIT calls to the existing HTTP/NATS client to obtain consent URLs and access tokens.
 
 An additional generic OAuth host surface lives in [`crates/oauth-wit/greentic.oauth-broker@1.0.0.wit`](crates/oauth-wit/greentic.oauth-broker@1.0.0.wit). It exposes the minimal broker functions (`get-consent-url`, `exchange-code`, `get-token`) with provider IDs, subjects, scopes, and redirect paths only—no provider-specific fields are baked into the interface.
 

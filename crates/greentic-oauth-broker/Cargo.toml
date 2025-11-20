@@ -4,6 +4,9 @@ version.workspace = true
 edition = "2024"
 description = "Multi-tenant OAuth broker exposing HTTP, NATS, and discovery APIs for Greentic integrations."
 license = "MIT"
+repository = "https://github.com/greentic-ai/greentic-oauth"
+homepage = "https://greentic.ai"
+documentation = "https://docs.rs/greentic-oauth-broker"
 
 [features]
 default = ["admin-ms"]
@@ -29,7 +32,7 @@ admin-all = [
 ]
 
 [dependencies]
-greentic-oauth-core = { path = "../greentic-oauth-core", workspace=true }
+greentic-oauth-core = { workspace = true }
 aes-gcm = { workspace = true }
 base64 = "0.22"
 ed25519-dalek = { workspace = true }

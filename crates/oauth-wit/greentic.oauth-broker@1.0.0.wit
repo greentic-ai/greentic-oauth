@@ -1,54 +1,38 @@
 package greentic:oauth-broker@1.0.0;
 
 /// Generic OAuth broker interface.
-/// All fields are generic (provider_id, subject, scopes, redirect_path).
-/// No provider-specific semantics (no "aws", "google", "azure" in the API).
-world broker {
+interface brokerapi {
     /// Build a consent/authorization URL.
     ///
-    /// - provider-id: logical provider identifier, e.g. "google", "microsoft", "github".
-    /// - subject: logical subject identifier (tenant/user/account) in the Greentic world.
-    /// - scopes: requested scopes, e.g. ["openid", "profile"].
-    /// - redirect-path: path component only (e.g. "/oauth/callback/google");
-    ///   host decides full domain/base URL.
-    /// - extra-json: optional JSON string with additional parameters (opaque).
-    ///
     /// Returns a full URL that a frontend or channel can redirect the user to.
-    get-consent-url: func(
+    getconsenturl: func(
         provider-id: string,
         subject: string,
         scopes: list<string>,
         redirect-path: string,
         extra-json: string,
-    ) -> string
+    ) -> string;
 
     /// Exchange an authorization code for tokens.
     ///
-    /// - provider-id: same as above.
-    /// - subject: same logical subject id used in get-consent-url.
-    /// - code: authorization code received at the redirect endpoint.
-    /// - redirect-path: must match what was used for get-consent-url.
-    ///
-    /// Returns a JSON string describing the token set:
-    /// { "access_token": "...", "refresh_token": "...", "expires_at": 1234567890, "token_type": "Bearer", "extra": { ... } }
-    /// The exact JSON structure matches greentic-oauth's TokenSet struct; it is opaque to flows.
-    exchange-code: func(
+    /// Returns a JSON string describing the token set.
+    exchangecode: func(
         provider-id: string,
         subject: string,
         code: string,
         redirect-path: string,
-    ) -> string
+    ) -> string;
 
     /// Retrieve a stored token set for a given provider/subject.
     ///
-    /// - provider-id: logical provider id.
-    /// - subject: logical subject id (tenant/user/account).
-    /// - scopes: desired scopes (host may refresh tokens if needed).
-    ///
     /// Returns a JSON string with the token set, or an empty string if nothing is available.
-    get-token: func(
+    gettoken: func(
         provider-id: string,
         subject: string,
         scopes: list<string>,
-    ) -> string
+    ) -> string;
+}
+
+world broker {
+    export brokerapi;
 }

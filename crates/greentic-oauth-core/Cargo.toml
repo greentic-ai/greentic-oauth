@@ -4,6 +4,9 @@ version.workspace = true
 edition = "2024"
 description = "Shared OAuth types, token helpers, and provider primitives used by the Greentic broker and SDKs."
 license = "MIT"
+repository = "https://github.com/greentic-ai/greentic-oauth"
+homepage = "https://greentic.ai"
+documentation = "https://docs.rs/greentic-oauth-core"
 
 [features]
 default = []

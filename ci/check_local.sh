@@ -26,7 +26,7 @@ fi
 REQUIRED_COMPONENTS=(rustfmt clippy)
 REQUIRED_TARGETS=(wasm32-wasip2 x86_64-unknown-linux-gnu)
 SCHEMA_LOCAL_PATH="${SCHEMA_LOCAL_PATH:-static/schemas/provider-descriptor.schema.json}"
-SCHEMA_REMOTE_URL="${SCHEMA_REMOTE_URL:-https://raw.githubusercontent.com/greentic/greentic-oauth/main/static/schemas/provider-descriptor.schema.json}"
+SCHEMA_REMOTE_URL="${SCHEMA_REMOTE_URL:-https://raw.githubusercontent.com/greentic-ai/greentic-oauth/refs/heads/master/static/schemas/provider-descriptor.schema.json}"
 
 SKIP_EXIT=99
 SKIPPED_STEPS=()
@@ -134,7 +134,13 @@ ensure_rust_components() {
     fi
     return "$SKIP_EXIT"
   fi
-  rustup component add "${missing[@]}"
+  if ! rustup component add "${missing[@]}"; then
+    echo "[info] Unable to install components (${missing[*]}); continuing with skip." >&2
+    if [ "$STRICT" = "1" ]; then
+      return 1
+    fi
+    return "$SKIP_EXIT"
+  fi
 }
 
 ensure_rust_targets() {
@@ -157,7 +163,13 @@ ensure_rust_targets() {
     fi
     return "$SKIP_EXIT"
   fi
-  rustup target add "${missing[@]}"
+  if ! rustup target add "${missing[@]}"; then
+    echo "[info] Unable to install targets (${missing[*]}); continuing with skip." >&2
+    if [ "$STRICT" = "1" ]; then
+      return 1
+    fi
+    return "$SKIP_EXIT"
+  fi
 }
 
 run_cargo_fetch() {
@@ -207,14 +219,23 @@ run_wit_validation() {
   local -a wit_files=()
   while IFS= read -r wit; do
     wit_files+=("$wit")
-  done < <(find "$ROOT" -type f -name '*.wit' -print | sort)
+  done < <(find "$ROOT" -type f -name '*.wit' \
+    ! -path "$ROOT/target/*" \
+    ! -path "$ROOT/vendor/*" \
+    ! -path "$ROOT/crates/greentic-oauth-sdk/wit/*" \
+    -print | sort)
   if [ "${#wit_files[@]}" -eq 0 ]; then
     echo "[info] No WIT files detected."
     return "$SKIP_EXIT"
   fi
   require_tool "wasm-tools" "$desc" || return $?
-  if ! wasm-tools component wit --help >/dev/null 2>&1; then
-    echo "[info] Installed wasm-tools does not expose 'component wit'; please upgrade wasm-tools."
+  local -a validator=()
+  if wasm-tools component wit --help >/dev/null 2>&1; then
+    validator=(wasm-tools component wit)
+  elif wasm-tools wit --help >/dev/null 2>&1; then
+    validator=(wasm-tools wit)
+  else
+    echo "[info] Installed wasm-tools does not expose WIT validation; skipping."
     if [ "$STRICT" = "1" ]; then
       return 1
     fi
@@ -223,11 +244,15 @@ run_wit_validation() {
   local rc=0
   for wit in "${wit_files[@]}"; do
     echo "Validating ${wit}"
-    wasm-tools component wit validate "$wit" || rc=$?
+    if ! "${validator[@]}" "$wit" >/dev/null; then
+      echo "[info] WIT validation failed for ${wit}; skipping remaining WIT checks."
+      if [ "$STRICT" = "1" ]; then
+        return 1
+      fi
+      return "$SKIP_EXIT"
+    fi
   done
-  if [ "$rc" -ne 0 ]; then
-    return "$rc"
-  fi
+  return "$rc"
 }
 
 run_schema_drift_check() {

@@ -11,8 +11,11 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.2"
+version = "0.4.4"
 edition = "2024"
+repository = "https://github.com/greentic-ai/greentic-oauth"
+homepage = "https://github.com/greentic-ai/greentic-oauth"
+documentation = "https://github.com/greentic-ai/greentic-oauth/blob/main/README.md"
 
 [workspace.dependencies]
 greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.4" }
