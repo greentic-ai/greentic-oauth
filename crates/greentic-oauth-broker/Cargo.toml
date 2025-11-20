@@ -29,7 +29,7 @@ admin-all = [
 ]
 
 [dependencies]
-greentic-oauth-core = { path = "../greentic-oauth-core", version = "=0.4.0" }
+greentic-oauth-core = { path = "../greentic-oauth-core", workspace=true }
 aes-gcm = { workspace = true }
 base64 = "0.22"
 ed25519-dalek = { workspace = true }

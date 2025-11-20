@@ -1,6 +1,6 @@
 [package]
 name = "greentic-oauth-core"
-version = "0.4.0"
+version.workspace = true
 edition = "2024"
 description = "Shared OAuth types, token helpers, and provider primitives used by the Greentic broker and SDKs."
 license = "MIT"
