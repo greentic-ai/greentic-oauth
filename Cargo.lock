@@ -1452,7 +1452,7 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "greentic-axum-example"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1486,7 +1486,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-broker"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1535,7 +1535,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-client"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "reqwest 0.12.24",
  "serde",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-core"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1568,8 +1568,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "greentic-oauth-host"
+version = "0.4.5"
+dependencies = [
+ "anyhow",
+ "greentic-oauth-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "wasmtime",
+]
+
+[[package]]
 name = "greentic-oauth-sdk"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1711,9 +1724,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -2113,7 +2126,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "serde",
  "serde_core",
 ]
@@ -2129,9 +2142,9 @@ dependencies = [
 
 [[package]]
 name = "insta"
-version = "1.44.0"
+version = "1.44.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b246c455fbf8e7bdda56a226b525b24b601c0bbe15458beb72412678319cda5a"
+checksum = "e8732d3774162a0851e3f2b150eb98f31a9885dd75985099421d393385a01dfd"
 dependencies = [
  "console",
  "once_cell",
@@ -2598,7 +2611,7 @@ dependencies = [
 
 [[package]]
 name = "oauth-testharness"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3244,7 +3257,7 @@ dependencies = [
  "ahash",
  "fluent-uri",
  "getrandom 0.3.4",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "parking_lot",
  "percent-encoding",
  "serde_json",
@@ -5697,18 +5710,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.27"
+version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0894878a5fa3edfd6da3f88c4805f4c8558e2b996227a3d864f47fe11e38282c"
+checksum = "43fa6694ed34d6e57407afbccdeecfa268c470a7d2a5b0cf49ce9fcc345afb90"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.27"
+version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88d2b8d9c68ad2b9e4340d7832716a4d21a22a1154777ad56ea55c51a9cf3831"
+checksum = "c640b22cd9817fae95be82f0d2f90b11f7605f6c319d16705c459b27ac2cbc26"
 dependencies = [
  "proc-macro2",
  "quote",
