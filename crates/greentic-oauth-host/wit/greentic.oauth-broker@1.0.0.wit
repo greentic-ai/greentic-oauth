@@ -1,0 +1,38 @@
+package greentic:oauth-broker@1.0.0;
+
+/// Generic OAuth broker interface.
+interface brokerapi {
+    /// Build a consent/authorization URL.
+    ///
+    /// Returns a full URL that a frontend or channel can redirect the user to.
+    getconsenturl: func(
+        provider-id: string,
+        subject: string,
+        scopes: list<string>,
+        redirect-path: string,
+        extra-json: string,
+    ) -> string;
+
+    /// Exchange an authorization code for tokens.
+    ///
+    /// Returns a JSON string describing the token set.
+    exchangecode: func(
+        provider-id: string,
+        subject: string,
+        code: string,
+        redirect-path: string,
+    ) -> string;
+
+    /// Retrieve a stored token set for a given provider/subject.
+    ///
+    /// Returns a JSON string with the token set, or an empty string if nothing is available.
+    gettoken: func(
+        provider-id: string,
+        subject: string,
+        scopes: list<string>,
+    ) -> string;
+}
+
+world broker {
+    export brokerapi;
+}

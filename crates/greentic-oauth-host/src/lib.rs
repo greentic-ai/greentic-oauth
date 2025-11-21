@@ -16,7 +16,8 @@ use wasmtime::component::{HasData, Linker};
 
 mod bindings {
     wasmtime::component::bindgen!({
-        path: "../../crates/oauth-wit",
+        // Local copy of the broker WIT to ensure published crates include it.
+        path: "wit",
         interfaces: "
             import greentic:oauth-broker/brokerapi@1.0.0;
         ",
