@@ -4,6 +4,16 @@ Greentic OAuth stitches together the `greentic-oauth-broker`, SDKs, and worker t
 
 > **OAuth Conformance CI Incoming** — automated checks now run `cargo fmt`, `cargo clippy`, `cargo build`, and `cargo test` on every pull request so regressions are caught early.
 
+## Interface bindings
+
+Hosts should import capabilities through the curated bindings crates:
+- `greentic-interfaces-host` for host-side interfaces (secrets/state/session/oauth/http/telemetry)
+- `greentic-interfaces-wasmtime` for Wasmtime linker helpers
+
+Guest components (wasm32-wasip2) should depend on `greentic-interfaces-guest`. Direct WIT/bindgen usage is being phased out in favour of these crates.
+
+See `docs/bindings-migration.md` for migration notes.
+
 ## Toolchain
 
 This workspace targets the Rust 2024 edition. Until the edition stabilises, you need the nightly toolchain:

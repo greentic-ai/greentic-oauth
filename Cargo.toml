@@ -12,7 +12,7 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.5"
+version = "0.4.6"
 edition = "2024"
 repository = "https://github.com/greentic-ai/greentic-oauth"
 homepage = "https://github.com/greentic-ai/greentic-oauth"
@@ -24,7 +24,9 @@ greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.4"
 greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.4" }
 greentic-telemetry = { version = "0.4" }
 greentic-types = { version = "0.4", features = ["telemetry-autoinit"] }
-greentic-interfaces = { version = "0.4", default-features = false, features = ["oauth-broker-v1"] }
+greentic-interfaces-host = { version = "0.4.34" }
+greentic-interfaces-guest = { version = "0.4.34" }
+greentic-interfaces-wasmtime = { version = "0.4.34" }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 tracing-opentelemetry = "0.32"
 ulid = "1"

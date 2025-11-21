@@ -359,4 +359,19 @@ mod tests {
             .and_then(|c| c.default_provider.as_deref());
         assert_eq!(provider, Some("test-provider"));
     }
+
+    #[test]
+    fn adds_broker_to_linker_without_config() {
+        let mut linker: Linker<InMemoryOAuthContext> = Linker::new(&Engine::default());
+        let mut ctx = InMemoryOAuthContext {
+            tenant_id: "tenant-456".into(),
+            env: "staging".into(),
+            oauth_config: None,
+            host: OAuthBrokerHost::default(),
+        };
+
+        add_oauth_broker_to_linker(&mut linker).expect("linker wiring succeeds without config");
+        let host = project_host(&mut ctx);
+        assert!(host.cfg.is_none(), "host should reflect absence of config");
+    }
 }
