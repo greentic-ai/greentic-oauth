@@ -58,7 +58,7 @@ rustls = { workspace = true }
 webpki-roots = { workspace = true }
 reqwest = { workspace = true, features = ["rustls-tls"] }
 greentic-telemetry.workspace = true
-greentic-types = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "telemetry-autoinit", "schemars", "time", "serde"] }
 opentelemetry = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 anyhow = { workspace = true }

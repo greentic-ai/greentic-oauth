@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt, str::FromStr};
 
+use greentic_types::TenantCtx;
 use serde::{Deserialize, Serialize};
 
 /// Stable identifier for a supported OAuth provider.
@@ -104,18 +105,6 @@ impl OAuthRequestCtx {
     }
 }
 
-/// Execution context for multi-tenant OAuth flows.
-#[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TenantCtx {
-    /// Deployment environment (e.g. "prod", "staging").
-    pub env: String,
-    /// Identifier for the customer tenant.
-    pub tenant: String,
-    /// Optional team qualifier within the tenant.
-    pub team: Option<String>,
-}
-
 /// Classification of the principal that owns an OAuth token.
 #[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,14 +172,15 @@ pub struct OAuthFlowResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use greentic_types::{EnvId, TeamId, TenantId};
     use serde_json::{from_str, to_string};
 
     fn example_tenant() -> TenantCtx {
-        TenantCtx {
-            env: "prod".to_owned(),
-            tenant: "acme".to_owned(),
-            team: Some("platform".to_owned()),
-        }
+        TenantCtx::new(
+            EnvId::try_from("prod").expect("env"),
+            TenantId::try_from("acme").expect("tenant"),
+        )
+        .with_team(Some(TeamId::try_from("platform").expect("team")))
     }
 
     fn example_owner() -> OwnerKind {

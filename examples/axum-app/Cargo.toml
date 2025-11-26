@@ -17,3 +17,4 @@ dotenvy = { workspace = true }
 greentic-oauth-sdk = { workspace = true }
 uuid = { workspace = true }
 greentic-oauth-core = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "serde", "time", "schemars"] }

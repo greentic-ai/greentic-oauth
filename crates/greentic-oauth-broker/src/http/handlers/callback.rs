@@ -5,7 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
-use greentic_oauth_core::types::{OwnerKind, TenantCtx as BrokerTenantCtx, TokenHandleClaims};
+use greentic_oauth_core::{OwnerKind, TenantCtx as BrokerTenantCtx, TokenHandleClaims};
 use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -203,17 +203,18 @@ async fn complete_flow_core<S>(
 where
     S: SecretsManager + 'static,
 {
-    let mut telemetry_ctx = TelemetryTenantCtx::new(
-        parse_env_id(flow_state.env.as_str())?,
-        parse_tenant_id(flow_state.tenant.as_str())?,
-    )
-    .with_flow(flow_state.flow_id.clone())
-    .with_provider(flow_state.provider.clone())
-    .with_user(Some(parse_user_id(flow_state.owner_id.as_str())?));
+    let env_id = parse_env_id(flow_state.env.as_str())?;
+    let tenant_id = parse_tenant_id(flow_state.tenant.as_str())?;
+    let team_id = match flow_state.team.as_ref() {
+        Some(team) => Some(parse_team_id(team.as_str())?),
+        None => None,
+    };
 
-    if let Some(team) = flow_state.team.as_ref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team.as_str())?));
-    }
+    let telemetry_ctx = TelemetryTenantCtx::new(env_id.clone(), tenant_id.clone())
+        .with_flow(flow_state.flow_id.clone())
+        .with_provider(flow_state.provider.clone())
+        .with_user(Some(parse_user_id(flow_state.owner_id.as_str())?))
+        .with_team(team_id.clone());
 
     set_current_tenant_ctx(&telemetry_ctx);
 
@@ -334,11 +335,8 @@ where
         },
     };
 
-    let tenant_ctx = BrokerTenantCtx {
-        env: flow_state.env.clone(),
-        tenant: flow_state.tenant.clone(),
-        team: flow_state.team.clone(),
-    };
+    let tenant_ctx =
+        BrokerTenantCtx::new(env_id.clone(), tenant_id.clone()).with_team(team_id.clone());
 
     let mut claims = TokenHandleClaims {
         provider: flow_state.provider.clone(),

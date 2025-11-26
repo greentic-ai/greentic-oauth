@@ -38,6 +38,33 @@ let mut store = Store::new(&engine, ctx);
 
 3) Ensure calls run inside a Tokio runtime (the host blocks on async broker client operations). embed hosts should enter a runtime before invoking guest code that touches OAuth.
 
+## Provider tokens (helper)
+
+If you need provider tokens (e.g., for events/messaging providers), use the host-level helper to avoid re-wiring the service everywhere:
+
+```rust
+use greentic_oauth_host::get_provider_access_token;
+use greentic_oauth_broker::storage::secrets_manager::SecretsManager; // your impl
+use greentic_types::{EnvId, TenantCtx, TenantId};
+
+let tenant = TenantCtx::new(
+    EnvId::try_from("prod").expect("env"),
+    TenantId::try_from("acme").expect("tenant"),
+);
+let token = get_provider_access_token(
+    my_secrets_manager, // implements SecretsManager
+    &tenant,
+    "msgraph-email",
+    &[String::from("https://graph.microsoft.com/.default")],
+)
+.await?;
+println!("access token: {}", token.access_token);
+```
+
+Secrets convention:
+- Client credentials/endpoints: `oauth/{provider_id}/{tenant_id}/client`
+- Optional refresh token: `oauth/{provider_id}/{tenant_id}/refresh-token`
+
 ## Testing
 
 This crate includes a linker wiring smoke test (`adds_broker_to_linker`) that verifies add-to-linker succeeds with an in-memory context. End-to-end OAuth flows are exercised in the broker and SDK crates; this crate intentionally limits itself to host wiring and relies on the embedding runner for full integration tests.

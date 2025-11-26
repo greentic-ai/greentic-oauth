@@ -12,7 +12,7 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.6"
+version = "0.4.7"
 edition = "2024"
 repository = "https://github.com/greentic-ai/greentic-oauth"
 homepage = "https://github.com/greentic-ai/greentic-oauth"
@@ -23,7 +23,7 @@ greentic-oauth-core = { path = "crates/greentic-oauth-core", version = "0.4" }
 greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.4" }
 greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.4" }
 greentic-telemetry = { version = "0.4" }
-greentic-types = { version = "0.4", features = ["telemetry-autoinit"] }
+greentic-types = { version = "0.4", default-features = false }
 greentic-interfaces-host = { version = "0.4.34" }
 greentic-interfaces-guest = { version = "0.4.34" }
 greentic-interfaces-wasmtime = { version = "0.4.34" }
@@ -74,3 +74,5 @@ time = { version = "0.3", features = ["serde"] }
 wiremock = "0.6"
 insta = { version = "1", features = ["json"] }
 dotenvy = "0.15"
+dashmap = "6"
+http = "1"

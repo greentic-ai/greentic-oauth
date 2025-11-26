@@ -14,6 +14,7 @@ use greentic_oauth_core::{OwnerKind as CoreOwnerKind, TenantCtx, TokenHandleClai
 use greentic_oauth_sdk::{
     FlowResult, InitiateAuthRequest, Method, OwnerKind, SignedFetchRequest, Visibility,
 };
+use greentic_types::{EnvId, TeamId, TenantId};
 use serde::{Deserialize, Serialize};
 use tokio::signal;
 use tracing::{info, level_filters::LevelFilter};
@@ -224,11 +225,11 @@ impl Broker for DemoBroker {
             owner: CoreOwnerKind::User {
                 subject: params.code.clone(),
             },
-            tenant: TenantCtx {
-                env: "dev".into(),
-                tenant: "acme".into(),
-                team: Some("ops".into()),
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("dev").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            )
+            .with_team(Some(TeamId::try_from("ops").expect("team"))),
             scopes: vec!["offline_access".into(), "openid".into(), "Mail.Read".into()],
             issued_at: 1_700_000_000,
             expires_at: 1_700_003_600,

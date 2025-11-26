@@ -1,7 +1,9 @@
 use greentic_oauth_core::{
+    OAuthFlowRequest, OAuthFlowResult, TokenHandleClaims, TokenSet,
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
-    types::{OAuthFlowRequest, OAuthFlowResult, TokenHandleClaims, TokenSet},
 };
+#[cfg(test)]
+use greentic_types::{EnvId, TenantId};
 use serde::Deserialize;
 use ureq::Agent;
 use url::Url;
@@ -257,7 +259,7 @@ mod tests {
         Json, Router, body::Bytes, extract::State, http::StatusCode, response::IntoResponse,
         routing::post,
     };
-    use greentic_oauth_core::types::{OwnerKind, TenantCtx};
+    use greentic_oauth_core::{OwnerKind, TenantCtx};
     use serde_json::json;
     use std::{
         collections::HashMap,
@@ -339,11 +341,10 @@ mod tests {
 
     fn sample_request() -> OAuthFlowRequest {
         OAuthFlowRequest {
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: None,
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            ),
             owner: OwnerKind::Service {
                 subject: "service:api".into(),
             },
@@ -363,11 +364,10 @@ mod tests {
             owner: OwnerKind::Service {
                 subject: "service:api".into(),
             },
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: None,
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            ),
             scopes: vec!["openid".into()],
             issued_at: 1,
             expires_at: 2,

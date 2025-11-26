@@ -5,7 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect},
 };
-use greentic_oauth_core::types::{OAuthFlowRequest, OwnerKind, TenantCtx as BrokerTenantCtx};
+use greentic_oauth_core::{OAuthFlowRequest, OwnerKind, TenantCtx as BrokerTenantCtx};
 use greentic_types::{TenantCtx as TelemetryTenantCtx, telemetry::set_current_tenant_ctx};
 use serde::Deserialize;
 use serde_json::json;
@@ -203,16 +203,17 @@ where
     S: SecretsManager + 'static,
     F: FnOnce(&FlowState) -> Result<String, AppError>,
 {
-    let mut telemetry_ctx = TelemetryTenantCtx::new(
-        parse_env_id(request.env.as_str())?,
-        parse_tenant_id(request.tenant.as_str())?,
-    )
-    .with_flow(request.flow_id.clone())
-    .with_provider(request.provider.clone());
+    let env_id = parse_env_id(request.env.as_str())?;
+    let tenant_id = parse_tenant_id(request.tenant.as_str())?;
+    let team_id = match request.team.as_ref() {
+        Some(team) => Some(parse_team_id(team.as_str())?),
+        None => None,
+    };
 
-    if let Some(team) = request.team.as_ref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team.as_str())?));
-    }
+    let telemetry_ctx = TelemetryTenantCtx::new(env_id.clone(), tenant_id.clone())
+        .with_flow(request.flow_id.clone())
+        .with_provider(request.provider.clone())
+        .with_team(team_id.clone());
 
     set_current_tenant_ctx(&telemetry_ctx);
 
@@ -324,11 +325,7 @@ where
     let owner = build_owner_kind(request.owner_kind.clone(), &request.owner_id);
 
     let oauth_request = OAuthFlowRequest {
-        tenant: BrokerTenantCtx {
-            env: request.env.clone(),
-            tenant: request.tenant.clone(),
-            team: request.team.clone(),
-        },
+        tenant: BrokerTenantCtx::new(env_id.clone(), tenant_id.clone()).with_team(team_id.clone()),
         owner,
         redirect_uri: provider.redirect_uri().to_string(),
         state: Some(state_token.clone()),

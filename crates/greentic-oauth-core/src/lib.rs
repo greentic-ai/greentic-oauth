@@ -10,6 +10,8 @@ pub mod constants;
 pub mod oidc;
 pub mod pkce;
 pub mod provider;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod provider_tokens;
 pub mod state;
 pub mod types;
 pub mod verifier;
@@ -17,14 +19,20 @@ pub mod verifier;
 #[cfg(feature = "schemas")]
 pub mod schemas;
 
+pub use greentic_types::TenantCtx;
 #[cfg(not(target_arch = "wasm32"))]
 pub use oidc::{IdClaims, OidcClient, OidcError, PkceState};
 pub use pkce::PkcePair;
 pub use provider::{Provider, ProviderError, ProviderResult};
+#[cfg(not(target_arch = "wasm32"))]
+pub use provider_tokens::{
+    ProviderOAuthClientConfig, ProviderOAuthFlow, ProviderSecretStore, ProviderToken,
+    ProviderTokenError, ProviderTokenService, client_credentials_path, refresh_token_path,
+};
 pub use state::{DEFAULT_STATE_TTL, StateClaims, StateError, sign_state, verify_state};
 pub use types::{
-    OAuthFlowRequest, OAuthFlowResult, OAuthRequestCtx, OwnerKind, ProviderId, TenantCtx,
-    TokenHandleClaims, TokenSet,
+    OAuthFlowRequest, OAuthFlowResult, OAuthRequestCtx, OwnerKind, ProviderId, TokenHandleClaims,
+    TokenSet,
 };
 pub use verifier::{CodeVerifierStore, InMemoryCodeVerifierStore};
 

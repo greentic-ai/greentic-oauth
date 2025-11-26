@@ -13,6 +13,9 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 wasmtime = { workspace = true }
 greentic-oauth-sdk = { workspace = true }
+greentic-oauth-core = { workspace = true }
+greentic-oauth-broker = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "serde", "time", "schemars"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true }

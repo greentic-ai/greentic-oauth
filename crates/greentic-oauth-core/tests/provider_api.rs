@@ -2,8 +2,9 @@ use std::sync::{Arc, Mutex};
 
 use greentic_oauth_core::{
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
-    types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TenantCtx, TokenHandleClaims, TokenSet},
+    types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TokenHandleClaims, TokenSet},
 };
+use greentic_types::{EnvId, TenantCtx, TenantId};
 
 struct RecordingProvider {
     pkce_history: Arc<Mutex<Vec<Option<String>>>>,
@@ -23,11 +24,10 @@ impl RecordingProvider {
             owner: OwnerKind::Service {
                 subject: "svc".into(),
             },
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: None,
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            ),
             scopes: vec!["openid".into()],
             issued_at: 1,
             expires_at: 2,

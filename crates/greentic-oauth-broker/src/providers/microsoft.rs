@@ -334,7 +334,8 @@ mod tests {
         Json, Router, body::Bytes, extract::State, http::StatusCode, response::IntoResponse,
         routing::post,
     };
-    use greentic_oauth_core::types::{OwnerKind, TenantCtx};
+    use greentic_oauth_core::{OwnerKind, TenantCtx, TokenHandleClaims};
+    use greentic_types::{EnvId, TeamId, TenantId};
     use serde_json::json;
     use std::{
         collections::HashMap,
@@ -416,11 +417,11 @@ mod tests {
 
     fn sample_request() -> OAuthFlowRequest {
         OAuthFlowRequest {
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: Some("platform".into()),
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            )
+            .with_team(Some(TeamId::try_from("platform").expect("team"))),
             owner: OwnerKind::User {
                 subject: "user:1".into(),
             },
@@ -440,11 +441,11 @@ mod tests {
             owner: OwnerKind::User {
                 subject: "user:1".into(),
             },
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: Some("platform".into()),
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            )
+            .with_team(Some(TeamId::try_from("platform").expect("team"))),
             scopes: vec!["User.Read".into(), "offline_access".into()],
             issued_at: 1,
             expires_at: 2,

@@ -88,6 +88,7 @@ impl JwsService {
 mod tests {
     use super::*;
     use greentic_oauth_core::{OwnerKind, TenantCtx};
+    use greentic_types::{EnvId, TeamId, TenantId};
 
     fn sample_signer() -> JwsService {
         let secret = BASE64_STANDARD.encode([1u8; 32]).to_string();
@@ -101,11 +102,11 @@ mod tests {
             owner: OwnerKind::User {
                 subject: "user:42".into(),
             },
-            tenant: TenantCtx {
-                env: "prod".into(),
-                tenant: "acme".into(),
-                team: Some("devs".into()),
-            },
+            tenant: TenantCtx::new(
+                EnvId::try_from("prod").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            )
+            .with_team(Some(TeamId::try_from("devs").expect("team"))),
             scopes: vec!["read".into(), "write".into()],
             issued_at: 1_700_000_000,
             expires_at: 1_700_003_600,

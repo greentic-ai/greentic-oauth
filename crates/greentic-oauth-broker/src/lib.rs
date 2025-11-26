@@ -9,6 +9,7 @@ pub mod ids;
 pub mod mcp;
 pub mod nats;
 pub mod oauth;
+pub mod provider_tokens;
 pub mod providers;
 pub mod rate_limit;
 #[cfg(feature = "refresh-worker")]

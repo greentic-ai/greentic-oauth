@@ -19,9 +19,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 url = { workspace = true }
 base64 = "0.22"
+http = { workspace = true }
 wasmtime = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 tracing = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "serde", "time", "schemars"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-nats = { workspace = true }
@@ -30,9 +32,8 @@ futures-util = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwest = { workspace = true, features = ["json", "rustls-tls-webpki-roots"] }
+# Avoid pulling in tokio/reqwest on wasm targets; the wasm client is a stub.
 
 [dev-dependencies]
 uuid = { workspace = true }
-greentic-types = { workspace = true }
 anyhow = { workspace = true }

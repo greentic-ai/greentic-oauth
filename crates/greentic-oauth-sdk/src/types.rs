@@ -1,6 +1,9 @@
 use std::{fmt, str::FromStr};
 
 use greentic_oauth_core::TokenHandleClaims;
+#[cfg(target_arch = "wasm32")]
+use http::Method;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::Method;
 
 /// Configuration parameters for establishing a broker client.

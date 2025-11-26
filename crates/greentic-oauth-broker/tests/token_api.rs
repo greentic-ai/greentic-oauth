@@ -37,6 +37,7 @@ use greentic_oauth_core::{
     OwnerKind, TenantCtx, TokenHandleClaims, TokenSet,
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
 };
+use greentic_types::{EnvId, TenantId};
 use serde_json::{Value, json};
 use tempfile::tempdir;
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -338,15 +339,14 @@ where
     let owner = OwnerKind::User {
         subject: "user-1".into(),
     };
-    let tenant = TenantCtx {
-        env: "prod".into(),
-        tenant: "acme".into(),
-        team: None,
-    };
+    let tenant = TenantCtx::new(
+        EnvId::try_from("prod").expect("env"),
+        TenantId::try_from("acme").expect("tenant"),
+    );
 
     let key = ConnectionKey {
-        env: tenant.env.clone(),
-        tenant: tenant.tenant.clone(),
+        env: tenant.env.to_string(),
+        tenant: tenant.tenant.to_string(),
         team: None,
         owner_kind: OwnerKindKey::User,
         owner_id: "user-1".into(),

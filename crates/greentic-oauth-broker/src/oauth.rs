@@ -8,9 +8,9 @@ use std::{
 use crate::providers::ProviderMap;
 use anyhow::{Context, Result, anyhow};
 use greentic_oauth_core::provider::{ProviderError, ProviderErrorKind};
-use greentic_oauth_core::types::{
-    OwnerKind, TenantCtx, TokenHandleClaims, TokenSet as CoreTokenSet,
-};
+use greentic_oauth_core::{OwnerKind, TenantCtx, TokenHandleClaims, TokenSet as CoreTokenSet};
+#[cfg(test)]
+use greentic_types::{EnvId, TenantId};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -77,9 +77,14 @@ impl TokenStore for InMemoryTokenStore {
         token: &TokenSet,
     ) -> Result<()> {
         let key: TokenKey = (
-            tenant.env.clone(),
-            tenant.tenant.clone(),
-            tenant.team.clone().unwrap_or_default(),
+            tenant.env.to_string(),
+            tenant.tenant.to_string(),
+            tenant
+                .team
+                .clone()
+                .or(tenant.team_id.clone())
+                .map(|team| team.to_string())
+                .unwrap_or_default(),
             provider_id.to_owned(),
             subject.to_owned(),
         );
@@ -95,9 +100,14 @@ impl TokenStore for InMemoryTokenStore {
         subject: &str,
     ) -> Result<Option<TokenSet>> {
         let key = (
-            tenant.env.clone(),
-            tenant.tenant.clone(),
-            tenant.team.clone().unwrap_or_default(),
+            tenant.env.to_string(),
+            tenant.tenant.to_string(),
+            tenant
+                .team
+                .clone()
+                .or(tenant.team_id.clone())
+                .map(|team| team.to_string())
+                .unwrap_or_default(),
             provider_id.to_owned(),
             subject.to_owned(),
         );
@@ -476,7 +486,10 @@ where
     }
 
     pub fn build_redirect_url(&self, tenant: &TenantCtx, redirect_path: &str) -> Result<String> {
-        let tenant_key = format!("OAUTH_BASE_URL_{}", uppercase_key_token(&tenant.tenant));
+        let tenant_key = format!(
+            "OAUTH_BASE_URL_{}",
+            uppercase_key_token(tenant.tenant.as_str())
+        );
         let base = self
             .config
             .get(&tenant_key)
@@ -850,11 +863,10 @@ mod tests {
     #[test]
     fn in_memory_store_round_trips() {
         let store = InMemoryTokenStore::new();
-        let tenant = TenantCtx {
-            env: "dev".into(),
-            tenant: "acme".into(),
-            team: None,
-        };
+        let tenant = TenantCtx::new(
+            EnvId::try_from("dev").expect("env"),
+            TenantId::try_from("acme").expect("tenant"),
+        );
         let token = TokenSet {
             access_token: "a".into(),
             refresh_token: Some("r".into()),
@@ -879,11 +891,10 @@ mod tests {
         let broker = OAuthBroker::new(secrets, config, tokens, vec![Arc::new(DummyProvider)]);
         let url = broker
             .build_redirect_url(
-                &TenantCtx {
-                    env: "dev".into(),
-                    tenant: "acme".into(),
-                    team: None,
-                },
+                &TenantCtx::new(
+                    EnvId::try_from("dev").expect("env"),
+                    TenantId::try_from("acme").expect("tenant"),
+                ),
                 "/oauth/callback",
             )
             .expect("redirect url");
@@ -899,11 +910,10 @@ mod tests {
         let broker = OAuthBroker::new(secrets, config, tokens, vec![Arc::new(DummyProvider)]);
         let url = broker
             .get_consent_url(
-                &TenantCtx {
-                    env: "dev".into(),
-                    tenant: "tenant-1".into(),
-                    team: None,
-                },
+                &TenantCtx::new(
+                    EnvId::try_from("dev").expect("env"),
+                    TenantId::try_from("tenant-1").expect("tenant"),
+                ),
                 "dummy",
                 "subj",
                 &[],
@@ -937,11 +947,10 @@ mod tests {
             Arc::clone(&tokens),
             vec![Arc::new(DummyProvider)],
         );
-        let tenant_ctx = TenantCtx {
-            env: "dev".into(),
-            tenant: "tenant".into(),
-            team: None,
-        };
+        let tenant_ctx = TenantCtx::new(
+            EnvId::try_from("dev").expect("env"),
+            TenantId::try_from("tenant").expect("tenant"),
+        );
         let expired = TokenSet {
             access_token: "old".into(),
             refresh_token: Some("refresh-dummy".into()),
@@ -973,11 +982,10 @@ mod tests {
         ));
         let host = BrokerHost::new(
             broker,
-            TenantCtx {
-                env: "dev".into(),
-                tenant: "acme".into(),
-                team: None,
-            },
+            TenantCtx::new(
+                EnvId::try_from("dev").expect("env"),
+                TenantId::try_from("acme").expect("tenant"),
+            ),
         );
         let consent = host.get_consent_url(
             "dummy".into(),

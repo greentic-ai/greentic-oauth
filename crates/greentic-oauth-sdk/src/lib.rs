@@ -19,4 +19,7 @@ pub use types::{
     SignedFetchRequest, SignedFetchResponse, Visibility,
 };
 
+#[cfg(target_arch = "wasm32")]
+pub use http::Method;
+#[cfg(not(target_arch = "wasm32"))]
 pub use reqwest::Method;

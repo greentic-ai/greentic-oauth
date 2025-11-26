@@ -76,15 +76,20 @@ pub fn claims_from_connection(
 ) -> TokenHandleClaims {
     let issued_at = now_epoch_seconds();
     let owner = key.owner_kind.to_owner_kind(key.owner_id.clone());
+    let env_id =
+        parse_env_id(&key.env).expect("stored connection key env must be a valid identifier");
+    let tenant_id = parse_tenant_id(&key.tenant)
+        .expect("stored connection key tenant must be a valid identifier");
+    let mut tenant_ctx = TenantCtx::new(env_id, tenant_id);
+    if let Some(team) = key.team.as_deref() {
+        let team_id = parse_team_id(team).expect("stored connection key team must be valid");
+        tenant_ctx = tenant_ctx.with_team(Some(team_id));
+    }
     TokenHandleClaims {
         provider: provider.to_string(),
         subject: key.provider_account_id.clone(),
         owner,
-        tenant: TenantCtx {
-            env: key.env.clone(),
-            tenant: key.tenant.clone(),
-            team: key.team.clone(),
-        },
+        tenant: tenant_ctx,
         scopes: Vec::new(),
         issued_at,
         expires_at: expires_at.unwrap_or(issued_at),
@@ -111,22 +116,22 @@ pub async fn resolve_with_claims<S>(
 where
     S: SecretsManager + 'static,
 {
-    let mut telemetry_ctx = TelemetryTenantCtx::new(
-        parse_env_id(claims.tenant.env.as_str())?,
-        parse_tenant_id(claims.tenant.tenant.as_str())?,
-    )
-    .with_provider(claims.provider.clone())
-    .with_user(Some(parse_user_id(claims.subject.as_str())?));
-
-    if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
-    }
+    let telemetry_ctx =
+        TelemetryTenantCtx::new(claims.tenant.env.clone(), claims.tenant.tenant.clone())
+            .with_provider(claims.provider.clone())
+            .with_user(Some(parse_user_id(claims.subject.as_str())?))
+            .with_team(claims.tenant.team.clone().or(claims.tenant.team_id.clone()));
 
     set_current_tenant_ctx(&telemetry_ctx);
-    let team_ref = claims.tenant.team.as_deref();
+    let team_ref = claims
+        .tenant
+        .team
+        .as_ref()
+        .or(claims.tenant.team_id.as_ref())
+        .map(|team| team.as_str());
     let attrs = AuditAttributes {
-        env: &claims.tenant.env,
-        tenant: &claims.tenant.tenant,
+        env: claims.tenant.env.as_str(),
+        tenant: claims.tenant.tenant.as_str(),
         team: team_ref,
         provider: &claims.provider,
     };
@@ -142,7 +147,12 @@ where
     let key = ConnectionKey::from_owner(
         claims.tenant.env.clone(),
         claims.tenant.tenant.clone(),
-        claims.tenant.team.clone(),
+        claims
+            .tenant
+            .team
+            .clone()
+            .or(claims.tenant.team_id.clone())
+            .map(|team| team.to_string()),
         &claims.owner,
         claims.subject.clone(),
     );
@@ -312,22 +322,22 @@ where
             return Err(err.into());
         }
     };
-    let mut telemetry_ctx = TelemetryTenantCtx::new(
-        parse_env_id(claims.tenant.env.as_str())?,
-        parse_tenant_id(claims.tenant.tenant.as_str())?,
-    )
-    .with_provider(claims.provider.clone())
-    .with_user(Some(parse_user_id(claims.subject.as_str())?));
-
-    if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
-    }
+    let telemetry_ctx =
+        TelemetryTenantCtx::new(claims.tenant.env.clone(), claims.tenant.tenant.clone())
+            .with_provider(claims.provider.clone())
+            .with_user(Some(parse_user_id(claims.subject.as_str())?))
+            .with_team(claims.tenant.team.clone().or(claims.tenant.team_id.clone()));
 
     set_current_tenant_ctx(&telemetry_ctx);
-    let team_ref = claims.tenant.team.as_deref();
+    let team_ref = claims
+        .tenant
+        .team
+        .as_ref()
+        .or(claims.tenant.team_id.as_ref())
+        .map(|team| team.as_str());
     let attrs = AuditAttributes {
-        env: &claims.tenant.env,
-        tenant: &claims.tenant.tenant,
+        env: claims.tenant.env.as_str(),
+        tenant: claims.tenant.tenant.as_str(),
         team: team_ref,
         provider: &claims.provider,
     };
@@ -361,7 +371,12 @@ where
     let key = ConnectionKey::from_owner(
         claims.tenant.env.clone(),
         claims.tenant.tenant.clone(),
-        claims.tenant.team.clone(),
+        claims
+            .tenant
+            .team
+            .clone()
+            .or(claims.tenant.team_id.clone())
+            .map(|team| team.to_string()),
         &claims.owner,
         claims.subject.clone(),
     );
@@ -516,22 +531,22 @@ where
             return Err(err.into());
         }
     };
-    let mut telemetry_ctx = TelemetryTenantCtx::new(
-        parse_env_id(claims.tenant.env.as_str())?,
-        parse_tenant_id(claims.tenant.tenant.as_str())?,
-    )
-    .with_provider(claims.provider.clone())
-    .with_user(Some(parse_user_id(claims.subject.as_str())?));
-
-    if let Some(team) = claims.tenant.team.as_deref() {
-        telemetry_ctx = telemetry_ctx.with_team(Some(parse_team_id(team)?));
-    }
+    let telemetry_ctx =
+        TelemetryTenantCtx::new(claims.tenant.env.clone(), claims.tenant.tenant.clone())
+            .with_provider(claims.provider.clone())
+            .with_user(Some(parse_user_id(claims.subject.as_str())?))
+            .with_team(claims.tenant.team.clone().or(claims.tenant.team_id.clone()));
 
     set_current_tenant_ctx(&telemetry_ctx);
-    let team_ref = claims.tenant.team.as_deref();
+    let team_ref = claims
+        .tenant
+        .team
+        .as_ref()
+        .or(claims.tenant.team_id.as_ref())
+        .map(|team| team.as_str());
     let attrs = AuditAttributes {
-        env: &claims.tenant.env,
-        tenant: &claims.tenant.tenant,
+        env: claims.tenant.env.as_str(),
+        tenant: claims.tenant.tenant.as_str(),
         team: team_ref,
         provider: &claims.provider,
     };

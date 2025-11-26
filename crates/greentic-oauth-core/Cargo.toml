@@ -10,7 +10,7 @@ documentation = "https://docs.rs/greentic-oauth-core"
 
 [features]
 default = []
-schemas = ["schemars", "serde_json"]
+schemas = ["schemars"]
 dpop = []
 par = []
 jar = []
@@ -23,19 +23,20 @@ sha2 = { workspace = true }
 jsonwebtoken = { workspace = true }
 serde = { workspace = true }
 schemars = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
 anyhow = { workspace = true }
+futures-util = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "time", "serde", "schemars"] }
+dashmap = { workspace = true }
+async-trait = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 openidconnect = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwest = { workspace = true, features = ["json", "rustls-tls-webpki-roots"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

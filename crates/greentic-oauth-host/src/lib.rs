@@ -8,6 +8,9 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, anyhow};
+use greentic_oauth_broker::provider_tokens::provider_token_service;
+use greentic_oauth_broker::storage::secrets_manager::SecretsManager;
+use greentic_oauth_core::{ProviderToken, ProviderTokenError, TenantCtx as CoreTenantCtx};
 use greentic_oauth_sdk::{Client, ClientConfig, InitiateAuthRequest, OwnerKind, SdkError};
 use serde::Serialize;
 use serde_json::Value;
@@ -116,6 +119,22 @@ pub struct OAuthBrokerHost {
     tenant: Option<String>,
     env: Option<String>,
     clients: HashMap<String, Client>,
+}
+
+/// Resolve provider access tokens using the broker's secrets wiring.
+pub async fn get_provider_access_token<S>(
+    secrets: S,
+    tenant: &CoreTenantCtx,
+    provider_id: &str,
+    scopes: &[String],
+) -> Result<ProviderToken, ProviderTokenError>
+where
+    S: SecretsManager + Send + Sync,
+{
+    let service = provider_token_service(secrets);
+    service
+        .get_provider_access_token(tenant, provider_id, scopes)
+        .await
 }
 
 impl OAuthBrokerHost {
