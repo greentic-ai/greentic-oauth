@@ -11,6 +11,11 @@ pub use client::Client;
 pub use client_wasm::Client;
 
 pub use error::SdkError;
+#[cfg(not(target_arch = "wasm32"))]
+pub use greentic_oauth_host::{
+    request_distributor_token, request_git_token, request_oci_token, request_repo_token,
+    request_scanner_token,
+};
 pub use types::{
     AccessToken, ClientConfig, FlowResult, InitiateAuthRequest, InitiateAuthResponse, OwnerKind,
     SignedFetchRequest, SignedFetchResponse, Visibility,

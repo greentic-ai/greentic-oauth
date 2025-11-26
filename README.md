@@ -327,7 +327,8 @@ The WASM component interface now uses [`crates/oauth-wit/greentic.oauth-broker@1
 
 ## Migration note
 
-- Legacy `greentic:oauth@0.1.0` bindings have been removed. Use `greentic:oauth-broker@1.0.0` and the host-side helpers (e.g., `request_git_token`, `request_oci_token`, `request_scanner_token`) for token acquisition.
+- Legacy `greentic:oauth@0.1.0` bindings have been removed. Use `greentic:oauth-broker@1.0.0` and the host-side helpers (e.g., `request_git_token`, `request_oci_token`, `request_scanner_token`, `request_repo_token`, `request_distributor_token`) for token acquisition.
+- The canonical WIT for oauth-broker lives in `greentic-interfaces-*`; this repo no longer carries local oauth WIT. Host wiring sits in `greentic-oauth-host`, and the helpers are re-exported from `greentic-oauth-sdk` for native callers.
 - The canonical `greentic:oauth-broker@1.0.0` WIT lives in the `greentic-interfaces-*` crates. This repo no longer carries a local oauth WIT; all bindings must be consumed from `greentic-interfaces-host`/`greentic-interfaces-wasmtime` (or `-guest` if needed).
 
 An additional generic OAuth host surface lives in [`crates/oauth-wit/greentic.oauth-broker@1.0.0.wit`](crates/oauth-wit/greentic.oauth-broker@1.0.0.wit). It exposes the minimal broker functions (`get-consent-url`, `exchange-code`, `get-token`) with provider IDs, subjects, scopes, and redirect paths only—no provider-specific fields are baked into the interface.

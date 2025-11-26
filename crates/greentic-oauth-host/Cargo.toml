@@ -1,0 +1,22 @@
+[package]
+name = "greentic-oauth-host"
+version.workspace = true
+edition = "2024"
+description = "Host-side helpers and Wasmtime linker wiring for the greentic:oauth-broker@1.0.0 world."
+license = "MIT"
+repository = "https://github.com/greentic-ai/greentic-oauth"
+homepage = "https://greentic.ai"
+documentation = "https://docs.rs/greentic-oauth-host"
+
+[dependencies]
+greentic-oauth-core = { workspace = true }
+greentic-interfaces-host = { workspace = true }
+greentic-interfaces-wasmtime = { workspace = true }
+greentic-types = { workspace = true, default-features = false, features = ["std", "serde", "schemars", "time"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+async-trait = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
