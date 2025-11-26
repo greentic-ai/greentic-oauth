@@ -3,7 +3,6 @@ members = [
     "crates/greentic-oauth-core",
     "crates/greentic-oauth-broker",
     "crates/greentic-oauth-sdk",
-    "crates/greentic-oauth-host",
     "examples/axum-app",
     "apps/oauth-testharness",
     "crates/greentic-oauth-client",
@@ -12,7 +11,7 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.7"
+version = "0.4.8"
 edition = "2024"
 repository = "https://github.com/greentic-ai/greentic-oauth"
 homepage = "https://github.com/greentic-ai/greentic-oauth"
@@ -24,9 +23,7 @@ greentic-oauth-broker = { path = "crates/greentic-oauth-broker", version = "0.4"
 greentic-oauth-sdk = { path = "crates/greentic-oauth-sdk", version = "0.4" }
 greentic-telemetry = { version = "0.4" }
 greentic-types = { version = "0.4", default-features = false }
-greentic-interfaces-host = { version = "0.4.34" }
-greentic-interfaces-guest = { version = "0.4.34" }
-greentic-interfaces-wasmtime = { version = "0.4.34" }
+greentic-interfaces-host = { version = "0.4.40", default-features = false }
 opentelemetry = { version = "0.31", features = ["metrics", "trace"] }
 tracing-opentelemetry = "0.32"
 ulid = "1"
@@ -65,7 +62,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 ureq = { version = "3", features = ["json"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-wasmtime = { version = "38", features = ["component-model"] }
+wasmtime = { version = "39", features = ["component-model"] }
 webpki-roots = "1"
 clap = { version = "4.5", features = ["derive"] }
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }

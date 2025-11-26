@@ -10,7 +10,6 @@ documentation = "https://docs.rs/greentic-oauth-sdk"
 
 [features]
 default = []
-wasm-host = ["dep:wasmtime", "dep:anyhow"]
 
 [dependencies]
 greentic-oauth-core = { workspace = true }

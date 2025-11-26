@@ -5,9 +5,6 @@ mod client_wasm;
 mod error;
 mod types;
 
-#[cfg(feature = "wasm-host")]
-pub mod oauth_broker_wit;
-
 #[cfg(not(target_arch = "wasm32"))]
 pub use client::Client;
 #[cfg(target_arch = "wasm32")]
