@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use greentic_types::TenantCtx;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Stable identifier for a supported OAuth provider.
 #[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]
@@ -141,6 +142,32 @@ pub struct TokenHandleClaims {
     pub issued_at: u64,
     pub expires_at: u64,
 }
+
+/// Narrow access token view returned by the broker helpers.
+#[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessToken {
+    pub access_token: String,
+    pub expires_at: u64,
+}
+
+/// Shared OAuth error surface for high-level broker helpers.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum OAuthError {
+    #[error("broker error: {0}")]
+    Broker(String),
+    #[error("unauthorized or invalid credentials")]
+    Unauthorized,
+    #[error("invalid or insufficient scopes")]
+    InvalidScope,
+    #[error("transport error: {0}")]
+    Transport(String),
+    #[error("unexpected error: {0}")]
+    Other(String),
+}
+
+/// Convenience result alias for OAuth operations.
+pub type OAuthResult<T> = Result<T, OAuthError>;
 
 /// Request payload for initiating an interactive OAuth authorization flow.
 #[cfg_attr(feature = "schemas", derive(schemars::JsonSchema))]

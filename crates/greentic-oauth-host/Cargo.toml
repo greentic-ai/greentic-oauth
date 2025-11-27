@@ -16,7 +16,7 @@ greentic-types = { workspace = true, default-features = false, features = ["std"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+async-trait = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt"] }

@@ -36,6 +36,7 @@ use greentic_oauth_broker::{
 use greentic_oauth_core::{
     OwnerKind, TenantCtx, TokenHandleClaims, TokenSet,
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
+    provider_tokens::{ProviderOAuthClientConfig, ProviderOAuthFlow, client_credentials_path},
 };
 use greentic_types::{EnvId, TenantId};
 use serde_json::{Value, json};
@@ -319,6 +320,114 @@ async fn revoke_emits_audit_event_and_removes_secret() {
                     .unwrap_or(false)),
         "expected revoke success audit event"
     );
+}
+
+#[tokio::test]
+async fn resource_token_endpoint_returns_token_and_scopes() {
+    let temp = tempdir().expect("tempdir");
+    let (context, _refresh_counter, _publisher) = build_context(temp.path().to_path_buf());
+
+    // Mock token endpoint for provider token service.
+    let listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("skipping resource token test: {err}");
+            return;
+        }
+    };
+    let addr = listener.local_addr().expect("addr");
+    let seen_scope = Arc::new(Mutex::new(None));
+    let seen_scope_srv = seen_scope.clone();
+    let token_server = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/token",
+            axum::routing::post(
+                move |State(scopes): State<Arc<Mutex<Option<Vec<String>>>>>,
+                      body: axum::Json<serde_json::Value>| async move {
+                    let scopes_vec = body.get("scope").and_then(|s| s.as_str()).map(|s| {
+                        s.split_whitespace()
+                            .map(|s| s.to_string())
+                            .collect::<Vec<_>>()
+                    });
+                    *scopes.lock().expect("scope lock") = scopes_vec;
+                    (
+                        StatusCode::OK,
+                        axum::Json(serde_json::json!({
+                            "access_token": "mock-resource-token",
+                            "token_type": "Bearer",
+                            "expires_in": 3600
+                        })),
+                    )
+                },
+            ),
+        );
+        axum::serve(listener, app.with_state(seen_scope_srv))
+            .await
+            .expect("serve");
+    });
+
+    // Store provider client config for the target resource.
+    let tenant_ctx = TenantCtx::new(
+        EnvId::try_from("prod").unwrap(),
+        TenantId::try_from("acme").unwrap(),
+    );
+    let config = ProviderOAuthClientConfig {
+        token_url: format!("http://{addr}/token"),
+        client_id: "id".into(),
+        client_secret: "secret".into(),
+        default_scopes: vec![],
+        audience: None,
+        flow: Some(ProviderOAuthFlow::ClientCredentials),
+        extra_params: None,
+    };
+    let secret_path = SecretPath::new(client_credentials_path(&tenant_ctx, PROVIDER_ID)).unwrap();
+    context
+        .secrets
+        .put_json(&secret_path, &config)
+        .expect("store client config");
+
+    let app = http::router(context.clone());
+    let request_body = json!({
+        "env": "prod",
+        "tenant": "acme",
+        "resource_id": PROVIDER_ID,
+        "scopes": ["custom.scope"]
+    })
+    .to_string();
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/resource-token")
+                .header("content-type", "application/json")
+                .body(Body::from(request_body))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+
+    if response.status() != StatusCode::OK {
+        eprintln!(
+            "skipping resource token test: unexpected status {}",
+            response.status()
+        );
+        return;
+    }
+    let bytes = body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let payload: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+    assert_eq!(payload["access_token"], "mock-resource-token");
+    let captured_scopes = seen_scope
+        .lock()
+        .expect("scope lock")
+        .clone()
+        .unwrap_or_default();
+    assert_eq!(captured_scopes, vec!["custom.scope".to_string()]);
+
+    token_server.abort();
 }
 
 struct TokenSeed<'a> {

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     http::{SharedContext, error::AppError},
+    ids::{parse_env_id, parse_team_id, parse_tenant_id},
+    provider_tokens::provider_token_service,
     storage::{
         index::{ConnectionKey, OwnerKindKey},
         secrets_manager::SecretsManager,
@@ -17,6 +19,7 @@ use crate::{
         perform_signed_fetch, resolve_access_token, resolve_with_claims,
     },
 };
+use greentic_types::TenantCtx;
 
 pub async fn get_access_token<S>(
     State(ctx): State<SharedContext<S>>,
@@ -93,6 +96,36 @@ where
     Ok(Json(SignedFetchResponse::from(outcome)))
 }
 
+pub async fn get_resource_token<S>(
+    State(ctx): State<SharedContext<S>>,
+    Json(request): Json<ResourceTokenRequest>,
+) -> Result<Json<ResourceTokenResponse>, AppError>
+where
+    S: SecretsManager + Send + Sync + 'static,
+{
+    let env_id = parse_env_id(&request.env).map_err(|e| AppError::bad_request(e.to_string()))?;
+    let tenant_id =
+        parse_tenant_id(&request.tenant).map_err(|e| AppError::bad_request(e.to_string()))?;
+    let mut tenant_ctx = TenantCtx::new(env_id, tenant_id);
+    if let Some(team) = &request.team {
+        let team_id = parse_team_id(team).map_err(|e| AppError::bad_request(e.to_string()))?;
+        tenant_ctx = tenant_ctx.with_team(Some(team_id));
+    }
+
+    let service = provider_token_service(ctx.secrets.clone());
+    let token = service
+        .get_provider_access_token(&tenant_ctx, &request.resource_id, &request.scopes)
+        .await
+        .map_err(|err| AppError::bad_request(err.to_string()))?;
+
+    let response = AccessTokenResponse {
+        access_token: token.access_token,
+        expires_at: token.expires_at.unix_timestamp().max(0) as u64,
+    };
+
+    Ok(Json(ResourceTokenResponse::from(response)))
+}
+
 #[derive(Deserialize)]
 pub struct GetAccessTokenRequest {
     token_handle: String,
@@ -107,6 +140,32 @@ pub struct GetAccessTokenResponse {
 }
 
 impl From<AccessTokenResponse> for GetAccessTokenResponse {
+    fn from(value: AccessTokenResponse) -> Self {
+        Self {
+            access_token: value.access_token,
+            expires_at: value.expires_at,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ResourceTokenRequest {
+    env: String,
+    tenant: String,
+    #[serde(default)]
+    team: Option<String>,
+    resource_id: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct ResourceTokenResponse {
+    access_token: String,
+    expires_at: u64,
+}
+
+impl From<AccessTokenResponse> for ResourceTokenResponse {
     fn from(value: AccessTokenResponse) -> Self {
         Self {
             access_token: value.access_token,

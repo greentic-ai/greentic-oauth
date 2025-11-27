@@ -1,6 +1,7 @@
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
+    Router,
     extract::{Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
@@ -20,14 +21,18 @@ use greentic_oauth_broker::{
     rate_limit::RateLimiter,
     security::{SecurityConfig, csrf::CsrfKey, jwe::JweVault, jws::JwsService},
     storage::{
-        StorageIndex, env::EnvSecretsManager, index::ConnectionKey, secrets_manager::SecretsManager,
+        SecretPath, StorageIndex, env::EnvSecretsManager, index::ConnectionKey,
+        secrets_manager::SecretsManager,
     },
     telemetry_nats::NatsHeaders,
 };
 use greentic_oauth_core::{
+    TenantCtx,
     provider::{Provider, ProviderError, ProviderErrorKind, ProviderResult},
+    provider_tokens::{ProviderOAuthClientConfig, ProviderOAuthFlow, client_credentials_path},
     types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TokenHandleClaims, TokenSet},
 };
+use greentic_types::{EnvId, TenantId};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::tempdir;
@@ -180,6 +185,122 @@ struct StoredTokenEnvelope {
 struct CallbackEventPayload {
     flow_id: String,
     token_handle: TokenHandleClaims,
+}
+
+#[tokio::test]
+async fn nats_resource_token_request() {
+    // HTTP token server backing ProviderTokenService.
+    let token_listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!("skipping nats resource token test: {err}");
+            return;
+        }
+    };
+    let token_addr = token_listener.local_addr().unwrap();
+    let token_server = tokio::spawn(async move {
+        let app = Router::new().route(
+            "/token",
+            axum::routing::post(|| async {
+                (
+                    StatusCode::OK,
+                    axum::Json(serde_json::json!({
+                        "access_token": "nats-resource-token",
+                        "token_type": "Bearer",
+                        "expires_in": 600
+                    })),
+                )
+            }),
+        );
+        axum::serve(token_listener, app).await.unwrap();
+    });
+
+    // Provider registry with fake provider (not used by provider token service beyond registry).
+    let mut registry = ProviderRegistry::new();
+    registry.insert("fake", Arc::new(FakeProvider::new()) as Arc<dyn Provider>);
+    let providers = Arc::new(registry);
+
+    let security = Arc::new(security_config());
+    let secrets =
+        Arc::new(EnvSecretsManager::new(tempdir().unwrap().path().to_path_buf()).unwrap());
+    // Seed provider client config in secrets for ProviderTokenService.
+    let tenant_ctx = TenantCtx::new(
+        EnvId::try_from("prod").unwrap(),
+        TenantId::try_from("acme").unwrap(),
+    );
+    let client_config = ProviderOAuthClientConfig {
+        token_url: format!("http://{token_addr}/token"),
+        client_id: "id".into(),
+        client_secret: "secret".into(),
+        default_scopes: vec![],
+        audience: None,
+        flow: Some(ProviderOAuthFlow::ClientCredentials),
+        extra_params: None,
+    };
+    let cred_path = client_credentials_path(&tenant_ctx, "fake");
+    secrets
+        .put_json(&SecretPath::new(cred_path).unwrap(), &client_config)
+        .unwrap();
+
+    let index = Arc::new(StorageIndex::new());
+    let redirect_guard = Arc::new(
+        RedirectGuard::from_list(vec!["https://app.example.com/success".to_string()]).unwrap(),
+    );
+
+    let listener = match TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+            eprintln!("skipping nats flow test: {err}");
+            return;
+        }
+        Err(err) => panic!("failed to bind mock NATS server: {err}"),
+    };
+    let addr = listener.local_addr().unwrap();
+    let url = format!("nats://{addr}");
+    let options = NatsOptions {
+        url: url.clone(),
+        tls_domain: None,
+    };
+
+    let (response_tx, response_rx) = oneshot::channel();
+    let server_handle = tokio::spawn(run_mock_resource_server(
+        listener,
+        response_tx,
+        tenant_ctx.clone(),
+    ));
+
+    let (writer, reader) = nats::connect(&options).await.unwrap();
+    let publisher: SharedPublisher = Arc::new(NatsEventPublisher::new(writer.clone()));
+    let rate_limiter = Arc::new(RateLimiter::new(100, Duration::from_secs(60)));
+    let config_root = Arc::new(config_root_path());
+    let provider_catalog = Arc::new(ProviderCatalog::load(&config_root.join("providers")).unwrap());
+
+    let context = build_context(
+        providers,
+        security,
+        secrets,
+        index,
+        redirect_guard,
+        publisher,
+        rate_limiter,
+        config_root.clone(),
+        provider_catalog,
+    );
+
+    let request_handle = nats::spawn_request_listener(writer.clone(), reader, context.clone())
+        .await
+        .unwrap();
+
+    let response_payload = time::timeout(Duration::from_secs(2), response_rx)
+        .await
+        .unwrap()
+        .unwrap();
+    let response_json: serde_json::Value = serde_json::from_slice(&response_payload).unwrap();
+    assert_eq!(response_json["access_token"], "nats-resource-token");
+
+    request_handle.abort();
+    server_handle.abort();
+    token_server.abort();
 }
 
 #[tokio::test]
@@ -395,6 +516,82 @@ async fn run_mock_server(
                 let _ = event_tx
                     .send((subject.to_string(), payload, NatsHeaders::default()))
                     .await;
+            }
+
+            writer.write_all(b"+OK\r\n").await.unwrap();
+        }
+    }
+}
+
+async fn run_mock_resource_server(
+    listener: TcpListener,
+    response_tx: oneshot::Sender<Vec<u8>>,
+    tenant_ctx: TenantCtx,
+) {
+    let (stream, _) = listener.accept().await.unwrap();
+    let (reader, mut writer) = stream.into_split();
+    let mut reader = tokio::io::BufReader::new(reader);
+    let mut response_tx = Some(response_tx);
+
+    writer
+        .write_all(b"INFO {\"server_id\":\"mock\"}\r\n")
+        .await
+        .unwrap();
+
+    let mut line = String::new();
+    let mut subscribed = false;
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).await.unwrap() == 0 {
+            break;
+        }
+        if line.starts_with("CONNECT") {
+            writer.write_all(b"+OK\r\n").await.unwrap();
+        } else if line.starts_with("PING") {
+            writer.write_all(b"PONG\r\n").await.unwrap();
+        } else if line.starts_with("SUB") && !subscribed {
+            subscribed = true;
+            writer.write_all(b"+OK\r\n").await.unwrap();
+            let payload = serde_json::json!({
+                "env": tenant_ctx.env.as_str(),
+                "tenant": tenant_ctx.tenant.as_str(),
+                "resource_id": "fake",
+                "scopes": ["read"]
+            })
+            .to_string();
+            let command = format!(
+                "MSG oauth.token.resource 1 INBOX.1 {}\r\n{}\r\n",
+                payload.len(),
+                payload
+            );
+            writer.write_all(command.as_bytes()).await.unwrap();
+        } else if line.starts_with("HPUB") || line.starts_with("PUB") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            let (subject, total_len, header_len) = if line.starts_with("HPUB") {
+                let subject = parts[1].to_string();
+                let header_len: usize = parts[2].parse().unwrap();
+                let total_len: usize = parts[3].parse().unwrap();
+                (subject, total_len, Some(header_len))
+            } else {
+                let subject = parts[1].to_string();
+                let total_len: usize = parts[2].parse().unwrap();
+                (subject, total_len, None)
+            };
+
+            let mut header_bytes = Vec::new();
+            if let Some(len) = header_len {
+                header_bytes.resize(len, 0);
+                reader.read_exact(&mut header_bytes).await.unwrap();
+            }
+            let mut payload = vec![0u8; total_len - header_len.unwrap_or(0)];
+            reader.read_exact(&mut payload).await.unwrap();
+            let mut crlf = [0u8; 2];
+            reader.read_exact(&mut crlf).await.unwrap();
+
+            if subject.starts_with("INBOX")
+                && let Some(tx) = response_tx.take()
+            {
+                let _ = tx.send(payload);
             }
 
             writer.write_all(b"+OK\r\n").await.unwrap();

@@ -1,9 +1,10 @@
 use std::time::Duration;
 
+use crate::AccessToken;
 use crate::error::SdkError;
 use crate::types::{
-    AccessToken, ClientConfig, FlowResult, InitiateAuthRequest, InitiateAuthResponse,
-    SignedFetchRequest, SignedFetchResponse,
+    ClientConfig, FlowResult, InitiateAuthRequest, InitiateAuthResponse, SignedFetchRequest,
+    SignedFetchResponse,
 };
 
 /// Placeholder client for wasm32 targets. The SDK currently depends on host networking

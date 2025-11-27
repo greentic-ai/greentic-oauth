@@ -96,6 +96,10 @@ where
             get(handlers::status::get_status::<S>),
         )
         .route("/token", post(handlers::token::get_access_token::<S>))
+        .route(
+            "/resource-token",
+            post(handlers::token::get_resource_token::<S>),
+        )
         .route("/signed-fetch", post(handlers::token::signed_fetch::<S>))
         .route(
             "/oauth/{provider}/token/refresh",

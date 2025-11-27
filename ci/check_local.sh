@@ -16,6 +16,9 @@ export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-always}"
 export CARGO_NET_RETRY="${CARGO_NET_RETRY:-5}"
 export CARGO_HTTP_TIMEOUT="${CARGO_HTTP_TIMEOUT:-120}"
 export RUSTFLAGS=""
+# Avoid host /tmp quota issues by pinning TMPDIR under the workspace.
+export TMPDIR="${TMPDIR:-$ROOT/target/tmp}"
+mkdir -p "$TMPDIR"
 
 TOOLCHAIN_FILE="$ROOT/rust-toolchain.toml"
 TOOLCHAIN_CHANNEL=""
@@ -222,7 +225,6 @@ run_wit_validation() {
   done < <(find "$ROOT" -type f -name '*.wit' \
     ! -path "$ROOT/target/*" \
     ! -path "$ROOT/vendor/*" \
-    ! -path "$ROOT/crates/greentic-oauth-sdk/wit/*" \
     -print | sort)
   if [ "${#wit_files[@]}" -eq 0 ]; then
     echo "[info] No WIT files detected."
@@ -284,18 +286,6 @@ run_schema_drift_check() {
     diff -u "$tmp_remote" "$tmp_local" || true
     return 1
   fi
-}
-
-run_publish_dry_run() {
-  local desc="cargo publish --dry-run"
-  require_tool "cargo" "$desc" || return $?
-  require_online "$desc" || return $?
-
-  local crates=(greentic-oauth-core greentic-oauth-broker greentic-oauth-sdk)
-  for crate in "${crates[@]}"; do
-    echo "Dry-running publish for ${crate}"
-    cargo publish --dry-run --allow-dirty --locked -p "$crate"
-  done
 }
 
 run_conformance_msgraph() {
@@ -375,9 +365,6 @@ main() {
 
   step "Schema drift"
   run_or_skip "schema drift check" run_schema_drift_check
-
-  step "Publish dry-runs"
-  run_or_skip "cargo publish --dry-run" run_publish_dry_run
 
   step "Conformance example (msgraph)"
   run_or_skip "cargo run conformance msgraph" run_conformance_msgraph

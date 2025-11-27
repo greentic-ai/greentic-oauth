@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
@@ -39,6 +40,23 @@ pub trait SecretsManager: Send + Sync {
     fn get_json<T: DeserializeOwned>(&self, path: &SecretPath) -> Result<Option<T>, StorageError>;
     /// Remove JSON data at the given path.
     fn delete(&self, path: &SecretPath) -> Result<(), StorageError>;
+}
+
+impl<T> SecretsManager for Arc<T>
+where
+    T: SecretsManager,
+{
+    fn put_json<U: Serialize>(&self, path: &SecretPath, value: &U) -> Result<(), StorageError> {
+        (**self).put_json(path, value)
+    }
+
+    fn get_json<U: DeserializeOwned>(&self, path: &SecretPath) -> Result<Option<U>, StorageError> {
+        (**self).get_json(path)
+    }
+
+    fn delete(&self, path: &SecretPath) -> Result<(), StorageError> {
+        (**self).delete(path)
+    }
 }
 
 /// Errors arising from storage operations.

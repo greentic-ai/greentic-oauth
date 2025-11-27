@@ -19,16 +19,22 @@ use tracing::{info, warn};
 use url::Url;
 use webpki_roots::TLS_SERVER_ROOTS;
 
+use crate::ids::{parse_env_id, parse_team_id, parse_tenant_id};
 use crate::{
     http::{
         SharedContext,
         error::AppError,
         handlers::initiate::{StartRequest, process_start},
     },
+    provider_tokens::provider_token_service,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
     telemetry_nats::{self, NatsHeaders},
-    tokens::{SignedFetchOptions, SignedFetchOutcome, perform_signed_fetch, resolve_access_token},
+    tokens::{
+        AccessTokenResponse, SignedFetchOptions, SignedFetchOutcome, perform_signed_fetch,
+        resolve_access_token,
+    },
 };
+use greentic_types::TenantCtx;
 
 pub trait AsyncReadWrite: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T> AsyncReadWrite for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
@@ -172,6 +178,36 @@ where
     Ok(serde_json::to_vec(&response)?)
 }
 
+async fn handle_resource_token<S>(
+    payload: &[u8],
+    ctx: &SharedContext<S>,
+) -> Result<Vec<u8>, NatsError>
+where
+    S: SecretsManager + 'static,
+{
+    let request: ResourceTokenMessage = serde_json::from_slice(payload)?;
+    let tenant =
+        parse_tenant_id(&request.tenant).map_err(|e| NatsError::InvalidRequest(e.to_string()))?;
+    let env = parse_env_id(&request.env).map_err(|e| NatsError::InvalidRequest(e.to_string()))?;
+    let mut tenant_ctx = TenantCtx::new(env, tenant);
+    if let Some(team) = request.team.as_deref() {
+        let team_id = parse_team_id(team).map_err(|e| NatsError::InvalidRequest(e.to_string()))?;
+        tenant_ctx = tenant_ctx.with_team(Some(team_id));
+    }
+
+    let service = provider_token_service(ctx.secrets.clone());
+    let token = service
+        .get_provider_access_token(&tenant_ctx, &request.resource_id, &request.scopes)
+        .await
+        .map_err(|err| NatsError::InvalidRequest(err.to_string()))?;
+
+    let response = AccessTokenResponse {
+        access_token: token.access_token,
+        expires_at: token.expires_at.unix_timestamp().max(0) as u64,
+    };
+    Ok(serde_json::to_vec(&response)?)
+}
+
 async fn handle_signed_fetch<S>(
     payload: &[u8],
     ctx: &SharedContext<S>,
@@ -210,6 +246,17 @@ struct TokenGetMessage {
     token_handle: String,
     #[serde(default)]
     force_refresh: bool,
+}
+
+#[derive(Deserialize)]
+struct ResourceTokenMessage {
+    env: String,
+    tenant: String,
+    #[serde(default)]
+    team: Option<String>,
+    resource_id: String,
+    #[serde(default)]
+    scopes: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -556,6 +603,9 @@ where
     match parts.get(1).copied() {
         Some("req") => handle_start_request(&parts, payload, ctx).await,
         Some("token") if parts.get(2) == Some(&"get") => handle_token_get(payload, ctx).await,
+        Some("token") if parts.get(2) == Some(&"resource") => {
+            handle_resource_token(payload, ctx).await
+        }
         Some("fetch") if parts.get(2) == Some(&"signed") => handle_signed_fetch(payload, ctx).await,
         _ => Err(NatsError::InvalidRequest(format!(
             "subject `{subject}` not supported"

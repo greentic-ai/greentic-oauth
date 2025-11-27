@@ -1,9 +1,12 @@
 use std::time::Duration;
 
 use async_nats::Client as NatsClient;
+use async_trait::async_trait;
 use base64::Engine;
 use futures_util::StreamExt;
-use greentic_oauth_core::TokenHandleClaims;
+use greentic_oauth_core::{AccessToken, OAuthError, TokenHandleClaims};
+use greentic_oauth_host::OAuthBroker;
+use greentic_types::TenantCtx;
 use reqwest::{Client as HttpClient, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::time;
@@ -11,8 +14,8 @@ use url::Url;
 
 use crate::error::SdkError;
 use crate::types::{
-    AccessToken, ClientConfig, FlowResult, InitiateAuthRequest, InitiateAuthResponse,
-    SignedFetchRequest, SignedFetchResponse,
+    ClientConfig, FlowResult, InitiateAuthRequest, InitiateAuthResponse, SignedFetchRequest,
+    SignedFetchResponse,
 };
 
 /// High-level client for interacting with the OAuth broker.
@@ -191,6 +194,30 @@ impl Client {
         Ok(providers.into_iter().map(|provider| provider.id).collect())
     }
 
+    /// Request a resource-scoped token (provider/registry/etc.) for the given tenant context.
+    pub async fn request_resource_token(
+        &self,
+        tenant: &TenantCtx,
+        resource_id: &str,
+        scopes: &[String],
+    ) -> Result<AccessToken, SdkError> {
+        let url = self.http_base.join("resource-token")?;
+        let payload = ResourceTokenRequest {
+            env: tenant.env.to_string(),
+            tenant: tenant.tenant.to_string(),
+            team: tenant.team.as_ref().map(|t| t.to_string()),
+            resource_id,
+            scopes,
+        };
+        let response = self.http.post(url).json(&payload).send().await?;
+        Self::ensure_success(response.status())?;
+        let body: ResourceTokenResponse = response.json().await?;
+        Ok(AccessToken {
+            access_token: body.access_token,
+            expires_at: body.expires_at,
+        })
+    }
+
     /// Fetch the merged provider descriptor scoped to the supplied context.
     pub async fn get_provider_descriptor_json(
         &self,
@@ -293,6 +320,40 @@ impl Client {
     }
 }
 
+#[async_trait]
+impl OAuthBroker for Client {
+    async fn request_token(
+        &self,
+        tenant: &TenantCtx,
+        resource: &str,
+        scopes: &[String],
+    ) -> greentic_oauth_core::OAuthResult<AccessToken> {
+        // Ensure caller and client are using the same tenant/env context; the broker
+        // enforces context via token handles, but we still guard obvious mismatches here.
+        if self.env != tenant.env.to_string() || self.tenant != tenant.tenant.to_string() {
+            return Err(OAuthError::Broker(
+                "tenant or env mismatch between client and request".into(),
+            ));
+        }
+
+        self.request_resource_token(tenant, resource, scopes)
+            .await
+            .map_err(map_sdk_error)
+    }
+}
+
+fn map_sdk_error(err: SdkError) -> OAuthError {
+    match err {
+        SdkError::Http(e) => OAuthError::Transport(e.to_string()),
+        SdkError::Nats(e) => OAuthError::Transport(e),
+        SdkError::Serialization(e) => OAuthError::Other(e.to_string()),
+        SdkError::Url(e) => OAuthError::Other(e.to_string()),
+        SdkError::Timeout => OAuthError::Other("timeout".into()),
+        SdkError::InvalidResponse(msg) => OAuthError::Broker(msg),
+        SdkError::Unsupported(msg) => OAuthError::Broker(msg.to_string()),
+    }
+}
+
 #[derive(Serialize)]
 struct InitiateAuthPayload<'a> {
     owner_kind: &'a str,
@@ -321,6 +382,27 @@ struct BrokerEvent {
     provider: String,
     token_handle: TokenHandleClaims,
     storage_path: String,
+}
+
+#[derive(Serialize)]
+struct ResourceTokenRequest<'a> {
+    env: String,
+    tenant: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    team: Option<String>,
+    resource_id: &'a str,
+    #[serde(skip_serializing_if = "scopes_empty", default)]
+    scopes: &'a [String],
+}
+
+#[derive(Deserialize)]
+struct ResourceTokenResponse {
+    access_token: String,
+    expires_at: u64,
+}
+
+fn scopes_empty(scopes: &&[String]) -> bool {
+    scopes.is_empty()
 }
 
 #[derive(Serialize)]

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Broker now exposes resource-scoped token endpoints over HTTP (`POST /resource-token`) and NATS (`oauth.token.resource`) that accept `TenantCtx + resource_id + scopes` and return access tokens via `ProviderTokenService`. The SDK adds `Client::request_resource_token`, and the host helpers consume it through `OAuthBroker`.
 - Restored the `greentic-oauth-host` crate as the canonical host wiring for `greentic:oauth-broker@1.0.0`, using `greentic-interfaces-*` (no local WIT).
 - Added host helper coverage for store/distributor flows (`request_repo_token`, `request_distributor_token`) alongside git/oci/scanner helpers, re-exported via `greentic-oauth-sdk` for native callers.
 - Enabled telemetry-autoinit in the SDK examples so they compile out of the box.

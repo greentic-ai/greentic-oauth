@@ -31,8 +31,8 @@ pub use provider_tokens::{
 };
 pub use state::{DEFAULT_STATE_TTL, StateClaims, StateError, sign_state, verify_state};
 pub use types::{
-    OAuthFlowRequest, OAuthFlowResult, OAuthRequestCtx, OwnerKind, ProviderId, TokenHandleClaims,
-    TokenSet,
+    AccessToken, OAuthError, OAuthFlowRequest, OAuthFlowResult, OAuthRequestCtx, OAuthResult,
+    OwnerKind, ProviderId, TokenHandleClaims, TokenSet,
 };
 pub use verifier::{CodeVerifierStore, InMemoryCodeVerifierStore};
 

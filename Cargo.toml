@@ -12,7 +12,7 @@ default-members = ["crates/greentic-oauth-broker"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.9"
+version = "0.4.11"
 edition = "2024"
 repository = "https://github.com/greentic-ai/greentic-oauth"
 homepage = "https://github.com/greentic-ai/greentic-oauth"

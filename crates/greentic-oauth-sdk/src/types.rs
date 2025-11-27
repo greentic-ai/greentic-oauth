@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr};
 
 use greentic_oauth_core::TokenHandleClaims;
+
 #[cfg(target_arch = "wasm32")]
 use http::Method;
 #[cfg(not(target_arch = "wasm32"))]
@@ -80,13 +81,6 @@ pub struct FlowResult {
     pub provider: String,
     pub token_handle_claims: TokenHandleClaims,
     pub storage_path: String,
-}
-
-/// Access token information returned by the broker.
-#[derive(Clone, Debug)]
-pub struct AccessToken {
-    pub access_token: String,
-    pub expires_at: u64,
 }
 
 /// Parameters for issuing a signed fetch request.
