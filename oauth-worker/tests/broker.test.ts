@@ -5,11 +5,16 @@ describe("brokerFetch", () => {
   it("rejects paths that attempt to override the broker origin", async () => {
     const env: Env = { BROKER_URL: "https://broker.example.com" };
 
-    await expect(brokerFetch(env, "https://evil.com/ssrf")).rejects.toThrow(
-      /must not override broker origin/
+    await expect(brokerFetch(env, "http://evil.com/ssrf")).rejects.toThrow(
+      "Invalid broker path: must start with '/'"
     );
-    await expect(brokerFetch(env, "//evil.com/ssrf")).rejects.toThrow(
-      /must not override broker origin/
+    await expect(brokerFetch(env, "//evil.com/ssrf")).rejects.toThrow(/must not override broker origin/);
+  });
+
+  it("rejects paths that do not start with a slash", async () => {
+    const env: Env = { BROKER_URL: "https://broker.example.com" };
+    await expect(brokerFetch(env, "relative/path")).rejects.toThrow(
+      /must start with '\/'/
     );
   });
 

@@ -24,6 +24,10 @@ export async function brokerFetch(
 }
 
 function ensureSameOrigin(path: string, base: string): URL {
+  if (!path.startsWith("/")) {
+    throw new Error("Invalid broker path: must start with '/'");
+  }
+
   const baseUrl = new URL(base);
   const url = new URL(path, baseUrl);
 
