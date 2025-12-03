@@ -8,8 +8,10 @@ export async function brokerFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
+  const buildUrl = (base: string) => ensureSameOrigin(path, base);
+
   if (env.BROKER) {
-    const url = new URL(path, "http://service.internal");
+    const url = buildUrl("http://service.internal");
     return env.BROKER.fetch(new Request(url.toString(), init));
   }
 
@@ -17,6 +19,17 @@ export async function brokerFetch(
     throw new Error("BROKER_URL not set");
   }
 
-  const url = new URL(path, env.BROKER_URL);
+  const url = buildUrl(env.BROKER_URL);
   return fetch(url.toString(), init);
+}
+
+function ensureSameOrigin(path: string, base: string): URL {
+  const baseUrl = new URL(base);
+  const url = new URL(path, baseUrl);
+
+  if (url.origin !== baseUrl.origin) {
+    throw new Error("Invalid broker path: must not override broker origin");
+  }
+
+  return url;
 }
