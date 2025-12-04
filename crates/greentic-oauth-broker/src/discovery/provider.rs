@@ -5,7 +5,10 @@ use std::{
 };
 
 use super::overlay::ProviderOverlay;
-use crate::providers::manifest::{ResolvedProviderManifest, ResolvedSecrets};
+use crate::{
+    path_safety::normalize_under_root,
+    providers::manifest::{ResolvedProviderManifest, ResolvedSecrets},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml_bw as serde_yaml;
@@ -627,11 +630,14 @@ fn load_overlay(
     segments: &[&str],
     provider_id: &str,
 ) -> Result<Option<ProviderOverlay>> {
-    let mut path = PathBuf::from(root);
+    let mut candidate = PathBuf::new();
     for segment in segments {
-        path.push(segment);
+        candidate.push(segment);
     }
-    path.push(format!("{provider_id}.yaml"));
+    candidate.push(format!("{provider_id}.yaml"));
+
+    let path = normalize_under_root(root, &candidate)
+        .map_err(|err| DiscoveryError::Invalid(format!("invalid overlay path: {err}")))?;
 
     if !path.exists() {
         return Ok(None);

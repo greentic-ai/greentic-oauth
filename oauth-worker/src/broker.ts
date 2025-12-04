@@ -5,6 +5,8 @@ export type Env = {
 
 import type { BrokerPath } from "./broker-path";
 
+const ALLOWED_BROKER_HOSTS = new Set<string>(["service.internal", "broker.internal"]);
+
 export async function brokerFetch(env: Env, path: BrokerPath, init?: RequestInit): Promise<Response> {
   const buildUrl = (base: string) => ensureSameOrigin(path, base);
 
@@ -38,6 +40,9 @@ function ensureSameOrigin(path: string, base: string): URL {
   }
 
   const baseUrl = new URL(base);
+  if (!ALLOWED_BROKER_HOSTS.has(baseUrl.host)) {
+    throw new Error("Invalid broker base host");
+  }
   const url = new URL(path, baseUrl);
 
   if (url.protocol !== baseUrl.protocol || url.host !== baseUrl.host) {

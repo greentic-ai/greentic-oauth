@@ -1,5 +1,5 @@
 import { brokerFetch, type Env } from "./broker";
-import { makeBrokerPath, type BrokerPath } from "./broker-path";
+import { makeCallbackPath, makeStartBrokerPath, type BrokerPath } from "./broker-path";
 import type { ExportedHandler } from "cloudflare:workers";
 
 function errorResponse(status: number, message: string): Response {
@@ -215,7 +215,7 @@ function buildStartBrokerPath(
   });
   const query = safeParams.toString();
   const path = `/${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start${query ? `?${query}` : ""}`;
-  return makeBrokerPath(path);
+  return makeStartBrokerPath(path);
 }
 
 function buildCallbackBrokerPath(params: URLSearchParams): BrokerPath {
@@ -227,7 +227,7 @@ function buildCallbackBrokerPath(params: URLSearchParams): BrokerPath {
     }
   });
   const query = safeParams.toString();
-  return makeBrokerPath(`/oauth/callback${query ? `?${query}` : ""}`);
+  return makeCallbackPath(query);
 }
 
 function isSafeParam(value: string): boolean {
