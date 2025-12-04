@@ -1,4 +1,5 @@
 import { brokerFetch, type Env } from "./broker";
+import { makeBrokerPath, type BrokerPath } from "./broker-path";
 import type { ExportedHandler } from "cloudflare:workers";
 
 function errorResponse(status: number, message: string): Response {
@@ -32,38 +33,24 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
     return errorResponse(405, "Method Not Allowed");
   }
 
-  const params = url.searchParams;
-  const envName = pickParam(params, "env");
-  const tenant = pickParam(params, "tenant");
-  const provider = pickParam(params, "provider");
-  const team = pickParam(params, "team");
-  const flowId = pickParam(params, "flow_id");
-
-  if (!envName || !tenant || !provider) {
-    return errorResponse(400, "Missing required parameters: env, tenant, provider");
+  let start: ResolvedStart;
+  try {
+    start = resolveBrokerPathFromRequest(request, url) as ResolvedStart;
+  } catch (err) {
+    if (err instanceof Response) {
+      return err;
+    }
+    throw err;
   }
-
-  const requiredQuery = ["owner_kind", "owner_id", "flow_id"];
-  const missing = requiredQuery.filter((key) => !pickParam(params, key));
-  if (missing.length > 0) {
-    return errorResponse(400, `Missing required query parameters: ${missing.join(", ")}`);
-  }
-
-  const forwardedParams = new URLSearchParams(url.searchParams);
-  forwardedParams.delete("env");
-  forwardedParams.delete("tenant");
-  forwardedParams.delete("provider");
-  const query = forwardedParams.toString();
-  const path = `/${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start${query ? `?${query}` : ""}`;
 
   const headers = applyTelemetryHeaders(request.headers, {
-    tenant,
-    team,
-    flow: flowId,
-    runId: flowId,
+    tenant: start.tenant,
+    team: start.team,
+    flow: start.flowId,
+    runId: start.flowId,
   });
 
-  const response = await brokerFetch(env, path, {
+  const response = await brokerFetch(env, start.path, {
     method: "GET",
     headers,
     redirect: "manual",
@@ -73,11 +60,19 @@ async function handleStart(request: Request, env: Env, url: URL): Promise<Respon
 }
 
 async function handleCallback(request: Request, url: URL, env: Env): Promise<Response> {
-  const path = `/oauth/callback${url.search}`;
+  let resolved: ResolvedCallback;
+  try {
+    resolved = resolveBrokerPathFromRequest(request, url) as ResolvedCallback;
+  } catch (err) {
+    if (err instanceof Response) {
+      return err;
+    }
+    throw err;
+  }
 
   const headers = applyTelemetryHeaders(request.headers, {});
 
-  const response = await brokerFetch(env, path, {
+  const response = await brokerFetch(env, resolved.path, {
     method: "GET",
     headers,
     redirect: "manual",
@@ -179,4 +174,98 @@ function randomHex(bytes: number): string {
   const buffer = new Uint8Array(bytes);
   crypto.getRandomValues(buffer);
   return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+type ResolvedStart = {
+  path: BrokerPath;
+  tenant: string | null;
+  team: string | null;
+  flowId: string | null;
+};
+
+type ResolvedCallback = { path: BrokerPath };
+
+function resolveBrokerPathFromRequest(request: Request, url?: URL): ResolvedStart | ResolvedCallback {
+  const parsed = url ?? new URL(request.url);
+  switch (parsed.pathname) {
+    case "/start":
+      return parseStartBrokerPath(parsed);
+    case "/callback":
+      return { path: buildCallbackBrokerPath(parsed.searchParams) };
+    default:
+      throw new Response("Not Found", { status: 404 });
+  }
+}
+
+function isSafeIdentifier(value: string): boolean {
+  return value.length > 0 && !/[\u0000-\u001F]/.test(value) && /^[A-Za-z0-9._-]+$/.test(value);
+}
+
+function buildStartBrokerPath(
+  envName: string,
+  tenant: string,
+  provider: string,
+  params: URLSearchParams
+): BrokerPath {
+  const safeParams = new URLSearchParams();
+  params.forEach((value, key) => {
+    if (isSafeParam(key) && isSafeParam(value)) {
+      safeParams.append(key, value);
+    }
+  });
+  const query = safeParams.toString();
+  const path = `/${encodeURIComponent(envName)}/${encodeURIComponent(tenant)}/${encodeURIComponent(provider)}/start${query ? `?${query}` : ""}`;
+  return makeBrokerPath(path);
+}
+
+function buildCallbackBrokerPath(params: URLSearchParams): BrokerPath {
+  const allowed = new Set(["code", "state", "error", "error_description", "session_state"]);
+  const safeParams = new URLSearchParams();
+  params.forEach((value, key) => {
+    if (allowed.has(key) && isSafeParam(key) && isSafeParam(value)) {
+      safeParams.append(key, value);
+    }
+  });
+  const query = safeParams.toString();
+  return makeBrokerPath(`/oauth/callback${query ? `?${query}` : ""}`);
+}
+
+function isSafeParam(value: string): boolean {
+  return !/[\u0000-\u001F]/.test(value);
+}
+
+function parseStartBrokerPath(url: URL): ResolvedStart {
+  const params = url.searchParams;
+  const envName = pickParam(params, "env");
+  const tenant = pickParam(params, "tenant");
+  const provider = pickParam(params, "provider");
+  const team = pickParam(params, "team");
+  const flowId = pickParam(params, "flow_id");
+
+  if (!envName || !tenant || !provider) {
+    throw errorResponse(400, "Missing required parameters: env, tenant, provider");
+  }
+  if (!isSafeIdentifier(envName)) {
+    throw errorResponse(400, "Invalid env parameter");
+  }
+  if (!isSafeIdentifier(tenant)) {
+    throw errorResponse(400, "Invalid tenant parameter");
+  }
+  if (!isSafeIdentifier(provider)) {
+    throw errorResponse(400, "Invalid provider parameter");
+  }
+
+  const requiredQuery = ["owner_kind", "owner_id", "flow_id"];
+  const missing = requiredQuery.filter((key) => !pickParam(params, key));
+  if (missing.length > 0) {
+    throw errorResponse(400, `Missing required query parameters: ${missing.join(", ")}`);
+  }
+
+  const forwardedParams = new URLSearchParams(url.searchParams);
+  forwardedParams.delete("env");
+  forwardedParams.delete("tenant");
+  forwardedParams.delete("provider");
+  const path = buildStartBrokerPath(envName, tenant, provider, forwardedParams);
+
+  return { path, tenant, team, flowId };
 }
