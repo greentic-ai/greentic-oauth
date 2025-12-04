@@ -24,6 +24,8 @@ export async function brokerFetch(
 }
 
 function ensureSameOrigin(path: string, base: string): URL {
+  // Treat caller input strictly as a path to avoid SSRF: require leading slash and
+  // disallow resolving to a different origin than the trusted broker base.
   if (!path.startsWith("/")) {
     throw new Error("Invalid broker path: must start with '/'");
   }
