@@ -215,6 +215,7 @@ All endpoints live under the broker root (default `0.0.0.0:8080`). Path segments
 | `GET` | `/callback` (also `/oauth/callback`) | Provider redirect target. Query: `code`, `state`, optional `error`. Persists encrypted token, publishes `oauth.res.*`, emits `auth.success`/`auth.failure`, redirects to the app redirect when provided, else returns `200`. Rate-limited per `{env,tenant,team,provider}`. |
 | `GET` | `/status/:env/:tenant/:provider` | Lists available connections for scope (tenant/team). Query: optional `team`. Response JSON array of `{ provider_account_id, visibility, created_at }`. |
 | `POST` | `/token` | Resolves an access token for a signed token handle. Body: `{ "token_handle": "<jws>", "force_refresh": bool }`. Response: `{ "access_token": "...", "expires_at": 1700000000 }`. |
+| `POST` | `/resource-token` | Resolves a resource-scoped token (client credentials) using `{ env, tenant, team?, resource_id, scopes[] }`. Response mirrors `/token` (`{ access_token, expires_at }`). |
 | `POST` | `/signed-fetch` | Performs a signed upstream HTTP request. Body: `{ "token_handle": "...", "method": "GET", "url": "...", "headers": [{ "name": "...", "value": "..." }], "body": "base64?", "body_encoding": "base64" }`. Response mirrors `status`, headers, and `body` (base64). |
 
 Additional behaviours:
@@ -222,6 +223,20 @@ Additional behaviours:
 - `/start` and `/callback` enforce in-memory rate limiting (`RateLimiter`) keyed by `{env,tenant,team?,provider}`.
 - Errors such as missing/invalid state, provider failures, or rate limits emit structured audit events (`oauth.audit.*`) before returning `4xx/5xx`.
 - Optional test-only helpers (`/_test/refresh`, `/_test/signed-fetch`) can be enabled via `--enable-test-endpoints` or `OAUTH_ENABLE_TEST_ENDPOINTS=true`. They proxy refresh grants and simple bearer requests for local conformance tooling and should remain disabled in production.
+
+### Resource token example (HTTP)
+
+```bash
+curl -s -X POST http://localhost:8080/resource-token \
+  -H "content-type: application/json" \
+  -d '{
+    "env": "dev",
+    "tenant": "acme",
+    "team": "ops",
+    "resource_id": "msgraph-email",
+    "scopes": ["https://graph.microsoft.com/.default"]
+  }'
+```
 
 ## How It Works
 
@@ -295,6 +310,23 @@ The broker optionally connects to NATS (`NATS_URL`, `NATS_TLS_DOMAIN`). Requests
 
 - **Subject**: `oauth.token.get`
 - **Payload**: `{ "token_handle": "<jws>", "force_refresh": false }`
+- **Response**: `{ "access_token": "...", "expires_at": 1700000000 }`
+
+### Resource token
+
+- **Subject**: `oauth.token.resource`
+- **Payload**:
+
+```json
+{
+  "env": "dev",
+  "tenant": "acme",
+  "team": "ops",
+  "resource_id": "msgraph-email",
+  "scopes": ["https://graph.microsoft.com/.default"]
+}
+```
+
 - **Response**: `{ "access_token": "...", "expires_at": 1700000000 }`
 
 ### Signed fetch
