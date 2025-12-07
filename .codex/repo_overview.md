@@ -1,60 +1,48 @@
-# Repository Overview
+# greentic-oauth SDK surface (host-side)
 
-## 1. High-Level Purpose
-- Greentic OAuth provides a brokered OAuth platform: the Rust broker performs OAuth handshakes, stores encrypted credentials, exposes HTTP/NATS/WIT/SDK contracts, and publishes discovery surfaces so other services can initiate flows and fetch signed tokens.
-- Supporting crates and tooling include shared OAuth/core primitives, host/SDK/client helpers, example apps, configuration bundles, and a Cloudflare Worker front-end used to forward start/callback traffic to the broker.
+## Bearer validation
+- Types: `ValidatedClaims` (from `greentic-oauth-core`, re-exported by `greentic-oauth-sdk`) and `TokenValidationConfig` (sdk).
+- API: `validate_bearer_token(token: &str, cfg: &TokenValidationConfig) -> Result<(ValidatedClaims, TenantCtx), OAuthError>` (async).
+- Behaviour: fetches JWKS with a 5m cache (configurable), validates signature/issuer/audience/exp, enforces non-empty `tenant_id` and `user_id`, extracts optional `team_id`, scopes (from `scope` or `scopes`), optional subject, builds `TenantCtx` (env from claim or config `with_env`), optional `required_scopes`.
+- Errors: uses `OAuthError` (now includes invalid signature/issuer/audience/missing claim/expired).
 
-## 2. Main Components and Functionality
-- **Path:** `crates/greentic-oauth-broker`
-  - **Role:** Primary OAuth broker service (Axum-based) with admin provisioning, discovery endpoints, token/session management, telemetry, NATS integration, and optional refresh/teams workers.
-  - **Key functionality:** Loads provider/tenant configs, enforces redirect guards and rate limits, stores secrets via `EnvSecretsManager`, issues tokens, publishes audit/events, exposes HTTP router, and can run admin provisioners for supported providers when feature-flagged.
-  - **Key dependencies / integration points:** Greentic telemetry/types/interfaces crates, NATS for async RPC/events, provider manifest/config files under `configs/`, optional teams/refresh workers, and storage index.
+## Broker client
+- Types: `Client`, `ClientConfig`, `InitiateAuthRequest/Response`, `FlowResult`, `AccessToken`, `SignedFetchRequest/Response`, `OwnerKind`, `Visibility`.
+- Methods:
+  - `Client::connect` (HTTP+NATS).
+  - `initiate_auth` (NATS) -> `InitiateAuthResponse` (redirect URL/state).
+  - `await_result` (NATS) -> `FlowResult` (includes token handle).
+  - `get_access_token` (HTTP `token`) -> `AccessToken` from token handle.
+  - `request_resource_token` / `request_git_token` / `request_oci_token` etc. via `OAuthBroker` trait on `Client` or `OauthBrokerHost<Client>`.
+  - `signed_fetch`, discovery helpers (`list_providers`, `get_provider_descriptor_json`, etc.).
+- WIT: `greentic:oauth-broker@1.0.0` host exports re-exported as `greentic_oauth_sdk::oauth_broker_wit`; `Client` implements `OAuthBroker` for host-side usage without touching WIT directly.
 
-- **Path:** `crates/greentic-oauth-core`
-  - **Role:** Shared OAuth primitives (PKCE, state signing/verification, provider traits, token handling).
-  - **Key functionality:** PKCE generation, signed state claims, provider/client config models, token set types, OIDC client helpers when not targeting wasm.
-  - **Key dependencies / integration points:** `greentic-types`, OIDC helpers, and optional schema generation.
+## Usage quickstart
+- Validation:
+  ```rust
+  use greentic_oauth_sdk::{TokenValidationConfig, validate_bearer_token};
 
-- **Path:** `crates/greentic-oauth-host`
-  - **Role:** Host-side helpers wrapping an `OAuthBroker` trait for consumers embedding the broker capability.
-  - **Key functionality:** Convenience methods to request Git/OCI/scanner/repo/distributor tokens, thin wrapper around a broker implementation for clarity and reuse.
+  let cfg = TokenValidationConfig::new(
+      "https://issuer.example.com/.well-known/jwks.json".parse()?,
+      "https://issuer.example.com",
+      "api://aud",
+  );
+  let (claims, tenant) = validate_bearer_token(token, &cfg).await?;
+  ```
+- Broker:
+  ```rust
+  use greentic_oauth_sdk::{Client, ClientConfig};
 
-- **Path:** `crates/greentic-oauth-sdk`
-  - **Role:** SDK surface for broker clients (native and wasm).
-  - **Key functionality:** Client abstraction (native vs wasm), re-exports host helpers and core types, flow initiation/exchange types, signed fetch request/response models.
+  let client = Client::connect(ClientConfig {
+      http_base_url: "...".into(),
+      nats_url: "...".into(),
+      env: "dev".into(),
+      tenant: "acme".into(),
+      provider: "msgraph".into(),
+      team: None,
+  }).await?;
 
-- **Path:** `crates/greentic-oauth-client`
-  - **Role:** HTTP client for the broker `/oauth/start` endpoint.
-  - **Key functionality:** Builder for base URL/timeouts, serializes start requests (owner/env/tenant/provider/scopes/etc.), parses start responses and surfaced errors.
-
-- **Path:** `apps/oauth-testharness`
-  - **Role:** Example relying party/OIDC harness for end-to-end testing.
-  - **Key functionality:** Axum server driving OIDC login/logout flows, manages PKCE/session state and token storage, signs cookies, and exposes simple HTML callbacks for manual validation.
-
-- **Path:** `examples/axum-app`
-  - **Role:** Demo Axum app showing how to drive broker flows via the SDK.
-  - **Key functionality:** Routes for health, start, callback, token exchange, and signed fetch; demonstrates broker trait usage and typed requests/responses.
-
-- **Path:** `oauth-worker`
-  - **Role:** Cloudflare Worker that fronts the broker for start/callback flows.
-  - **Key functionality:** Routes `/start` and `/callback`, validates required query params, forwards to bound broker service or `BROKER_URL`, applies telemetry headers, escapes callback HTML output, and enforces same-origin broker fetches to prevent SSRF.
-  - **Key dependencies / integration points:** Cloudflare service binding `BROKER` or external `BROKER_URL`, tests via Miniflare/Vitest; uses node/Workers toolchain.
-
-- **Path:** `configs/`
-  - **Role:** Provider and tenant configuration bundles consumed by the broker.
-  - **Key functionality:** Provider manifests/catalog used for discovery and runtime wiring; tenant configuration scaffolding.
-
-- **Path:** `docs/` and `static/`
-  - **Role:** Reference documentation and schemas.
-  - **Key functionality:** Discovery endpoint documentation, diagrams, provider descriptor JSON schema (`static/schemas/provider-descriptor.schema.json`) used by CI drift checks.
-
-## 3. Work In Progress, TODOs, and Stubs
-- **Location:** `crates/greentic-oauth-broker/src/admin/providers/mod.rs` (`NotImplementedProvisioner`)
-  - **Status:** Stub
-  - **Short description:** Placeholder admin provisioner that returns a warning for providers without an implemented admin automation; used when corresponding feature flags are absent.
-
-## 4. Broken, Failing, or Conflicting Areas
-- None currently observed in the latest test run (`npm test` in `oauth-worker` now passes).
-
-## 5. Notes for Future Work
-- Implement admin provisioners for feature-flagged providers currently falling back to `NotImplementedProvisioner`, or document intended coverage.
+  let auth = client.initiate_auth(request).await?;
+  let flow = client.await_result(&auth.flow_id, None).await?;
+  let token = client.get_access_token(&flow.token_handle_claims.subject, false).await?;
+  ```
