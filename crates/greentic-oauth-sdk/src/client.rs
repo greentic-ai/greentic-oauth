@@ -464,7 +464,9 @@ struct HttpHeaderOwned {
 
 #[cfg(test)]
 mod tests {
+    use super::Client;
     use crate::types::{OwnerKind, Visibility};
+    use greentic_oauth_host::OAuthBroker;
 
     #[test]
     fn owner_kind_to_string() {
@@ -477,5 +479,11 @@ mod tests {
         assert_eq!(Visibility::Private.as_str(), "private");
         assert_eq!(Visibility::Team.as_str(), "team");
         assert_eq!(Visibility::Tenant.as_str(), "tenant");
+    }
+
+    #[test]
+    fn client_implements_oauth_broker_trait() {
+        fn assert_broker<T: OAuthBroker>() {}
+        assert_broker::<Client>();
     }
 }

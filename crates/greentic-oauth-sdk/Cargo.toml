@@ -22,13 +22,15 @@ http = { workspace = true }
 tracing = { workspace = true }
 greentic-types = { workspace = true, default-features = false, features = ["std", "serde", "time", "schemars"] }
 async-trait = { workspace = true }
+chrono = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-nats = { workspace = true }
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "macros", "rt-multi-thread"] }
 futures-util = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 greentic-oauth-host = { workspace = true }
+jsonwebtoken = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # Avoid pulling in tokio/reqwest on wasm targets; the wasm client is a stub.

@@ -33,6 +33,7 @@ futures-util = { workspace = true }
 greentic-types = { workspace = true, default-features = false, features = ["std", "time", "serde", "schemars"] }
 dashmap = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 openidconnect = { workspace = true }

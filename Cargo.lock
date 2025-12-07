@@ -351,9 +351,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "base64ct"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
+checksum = "0e050f626429857a27ddccb31e0aca21356bfa709c04041aefddac081a8f068a"
 
 [[package]]
 name = "bit-set"
@@ -429,9 +429,9 @@ checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
 
 [[package]]
 name = "cc"
-version = "1.2.48"
+version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c481bdbf0ed3b892f6f806287d72acd515b352a4ec27a208489b8c1bc839633a"
+checksum = "90583009037521a116abf44494efecd645ba48b6622457080f080b85544e2215"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1141,9 +1141,9 @@ checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
 
 [[package]]
 name = "flate2"
-version = "1.1.7"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2152dbcb980c05735e2a651d96011320a949eb31a0c8b38b72645ce97dec676"
+checksum = "bfe33edd8e85a12a67454e37f8c75e730830d83e313556ab9ebf9ee7fbeb3bfb"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-axum-example"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1372,9 +1372,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces"
-version = "0.4.49"
+version = "0.4.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11df4af487223a6b5b514737872ac3f4e829e1172dfc6ecc3bfbead486fcc953"
+checksum = "49e6a94f467b4d21cb15a62b9205433a3766626e0a19f11077a1aabd56eb04bb"
 dependencies = [
  "anyhow",
  "greentic-types",
@@ -1389,9 +1389,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-host"
-version = "0.4.49"
+version = "0.4.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "98437b924bf1da4e2c042c8957ae9ef2805eb813fb0a404e0946c0b62c5753dd"
+checksum = "6a1f9420b8359a1ce968facceaa6a6e67c09e202c06bea1000d285d155f8e0b7"
 dependencies = [
  "greentic-interfaces",
  "greentic-types",
@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-interfaces-wasmtime"
-version = "0.4.49"
+version = "0.4.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1b768a7f116bb579d16651adc67ff1efaf941904df58059be7befa57b40f2fd"
+checksum = "d00a1c217ceeeb48ae147c6d4d8e222f504563ec3e7cbdb3f303588088960189"
 dependencies = [
  "anyhow",
  "camino",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-broker"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1463,7 +1463,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-client"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "reqwest 0.12.24",
  "serde",
@@ -1474,11 +1474,12 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-core"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
+ "chrono",
  "dashmap",
  "futures-util",
  "greentic-types",
@@ -1501,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-host"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "async-trait",
  "greentic-interfaces-host",
@@ -1516,17 +1517,19 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-sdk"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
  "base64 0.22.1",
+ "chrono",
  "futures-util",
  "greentic-oauth-core",
  "greentic-oauth-host",
  "greentic-types",
  "http 1.4.0",
+ "jsonwebtoken",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
@@ -2489,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "oauth-testharness"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "axum",
  "base64 0.22.1",

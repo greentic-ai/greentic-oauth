@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt, str::FromStr};
 
+use chrono::{DateTime, Utc};
 use greentic_types::TenantCtx;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -162,6 +163,16 @@ pub enum OAuthError {
     InvalidScope,
     #[error("transport error: {0}")]
     Transport(String),
+    #[error("invalid token signature")]
+    InvalidSignature,
+    #[error("invalid issuer")]
+    InvalidIssuer,
+    #[error("invalid audience")]
+    InvalidAudience,
+    #[error("required claim missing: {0}")]
+    MissingClaim(String),
+    #[error("token expired")]
+    ExpiredToken,
     #[error("unexpected error: {0}")]
     Other(String),
 }
@@ -194,6 +205,19 @@ pub struct OAuthFlowResult {
     pub redirect_url: String,
     pub state: Option<String>,
     pub scopes: Vec<String>,
+}
+
+/// Claims extracted from a validated bearer token.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedClaims {
+    pub tenant_id: String,
+    pub user_id: String,
+    pub team_id: Option<String>,
+    pub scopes: Vec<String>,
+    pub issuer: String,
+    pub audience: String,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub subject: Option<String>,
 }
 
 #[cfg(test)]

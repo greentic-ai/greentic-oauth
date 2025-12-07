@@ -14,6 +14,35 @@ Guest components (wasm32-wasip2) should depend on `greentic-interfaces-guest`. D
 
 See `docs/bindings-migration.md` for migration notes.
 
+## Service token validation (SDK)
+
+Use the SDK helper to turn a bearer token into claims and a `TenantCtx` without re-implementing JWKS/OIDC validation:
+
+```rust
+use greentic_oauth_sdk::{TokenValidationConfig, validate_bearer_token};
+
+let cfg = TokenValidationConfig::new(
+    "https://issuer.example.com/.well-known/jwks.json".parse()?,
+    "https://issuer.example.com/",
+    "api://aud",
+).with_required_scopes(vec!["repo.read".into()]);
+
+let (claims, tenant_ctx) = validate_bearer_token(token, &cfg).await?;
+assert_eq!(claims.tenant_id, tenant_ctx.tenant.as_str());
+```
+
+- Requires non-empty `tenant_id` and `user_id` claims; `team_id` is optional.
+- Expects an `env` claim to populate `TenantCtx`; set `with_env` on the config if the issuer does not embed it.
+- Enforces issuer/audience/signature/expiry, returns `ValidatedClaims` (issuer, audience, scopes, expiry, subject) plus the parsed `TenantCtx`.
+- JWKS responses are cached for five minutes by default; override with `cache_ttl` if you need a different window.
+- Scope enforcement is opt-in via `required_scopes`; otherwise scopes are surfaced but not validated.
+
+## Broker interactions
+
+- `greentic_oauth_sdk::Client` drives the broker over HTTP + NATS (`initiate_auth`, `await_result`, `get_access_token`, `request_resource_token`).
+- `OauthBrokerHost<Client>` lets hosts expose the broker to callers via the `OAuthBroker` trait (e.g., for repo/registry/scanner/distributor helpers).
+- The WIT bindings for `greentic:oauth-broker@1.0.0` are re-exported as `greentic_oauth_sdk::oauth_broker_wit` so hosts don’t need to pull `greentic-interfaces` directly when wiring Wasmtime linkers.
+
 ## Toolchain
 
 This workspace targets the Rust 2024 edition. Until the edition stabilises, you need the nightly toolchain:
