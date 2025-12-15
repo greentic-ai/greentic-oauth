@@ -556,7 +556,7 @@ where
     };
     let method_string = opts.method.to_string();
     let url_string = opts.url.clone();
-    let client = Client::new();
+    let client = ctx.token_http_client.clone();
     let mut attempts = 1usize;
     let mut refreshed = false;
 

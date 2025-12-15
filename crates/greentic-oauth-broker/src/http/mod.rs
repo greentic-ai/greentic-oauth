@@ -60,6 +60,7 @@ where
     pub oauth_base_url: Option<Arc<Url>>,
     pub admin_registry: Arc<AdminRegistry>,
     pub admin_consent: Arc<AdminConsentStore>,
+    pub token_http_client: reqwest::Client,
 }
 
 pub type SharedContext<S> = Arc<AppContext<S>>;

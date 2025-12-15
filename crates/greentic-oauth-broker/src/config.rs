@@ -161,6 +161,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    #[serial_test::serial]
     fn loads_provider_secrets_from_store() {
         let dir = tempdir().expect("tempdir");
         let store = EnvSecretsManager::new(dir.path().to_path_buf()).expect("store");
@@ -186,6 +187,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn missing_provider_secret_surfaces_error() {
         let dir = tempdir().expect("tempdir");
         let store = EnvSecretsManager::new(dir.path().to_path_buf()).expect("store");

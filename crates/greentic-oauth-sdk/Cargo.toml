@@ -26,14 +26,11 @@ chrono = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-nats = { workspace = true }
-tokio = { workspace = true, features = ["time", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["time", "macros", "rt-multi-thread", "net", "sync"] }
 futures-util = { workspace = true }
 reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 greentic-oauth-host = { workspace = true }
 jsonwebtoken = { workspace = true }
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-# Avoid pulling in tokio/reqwest on wasm targets; the wasm client is a stub.
 
 [dev-dependencies]
 uuid = { workspace = true }

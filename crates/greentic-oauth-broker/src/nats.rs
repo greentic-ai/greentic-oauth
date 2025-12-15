@@ -26,7 +26,7 @@ use crate::{
         error::AppError,
         handlers::initiate::{StartRequest, process_start},
     },
-    provider_tokens::provider_token_service,
+    provider_tokens::provider_token_service_with_client,
     storage::{index::OwnerKindKey, models::Visibility, secrets_manager::SecretsManager},
     telemetry_nats::{self, NatsHeaders},
     tokens::{
@@ -195,7 +195,8 @@ where
         tenant_ctx = tenant_ctx.with_team(Some(team_id));
     }
 
-    let service = provider_token_service(ctx.secrets.clone());
+    let service =
+        provider_token_service_with_client(ctx.secrets.clone(), ctx.token_http_client.clone());
     let token = service
         .get_provider_access_token(&tenant_ctx, &request.resource_id, &request.scopes)
         .await

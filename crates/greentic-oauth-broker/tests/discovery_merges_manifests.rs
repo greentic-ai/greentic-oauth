@@ -103,6 +103,7 @@ fn test_context() -> SharedContext<EnvSecretsManager> {
         oauth_base_url: Some(oauth_base_url),
         admin_registry: Arc::new(AdminRegistry::default()),
         admin_consent: Arc::new(AdminConsentStore::new(Duration::from_secs(600))),
+        token_http_client: reqwest::Client::new(),
     })
 }
 

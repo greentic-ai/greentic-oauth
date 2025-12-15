@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     http::{SharedContext, error::AppError},
     ids::{parse_env_id, parse_team_id, parse_tenant_id},
-    provider_tokens::provider_token_service,
+    provider_tokens::provider_token_service_with_client,
     storage::{
         index::{ConnectionKey, OwnerKindKey},
         secrets_manager::SecretsManager,
@@ -112,7 +112,8 @@ where
         tenant_ctx = tenant_ctx.with_team(Some(team_id));
     }
 
-    let service = provider_token_service(ctx.secrets.clone());
+    let service =
+        provider_token_service_with_client(ctx.secrets.clone(), ctx.token_http_client.clone());
     let token = service
         .get_provider_access_token(&tenant_ctx, &request.resource_id, &request.scopes)
         .await

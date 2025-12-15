@@ -4,6 +4,7 @@ use greentic_oauth_core::{
     client_credentials_path, refresh_token_path,
 };
 use greentic_types::TenantCtx;
+use reqwest::Client;
 
 use crate::storage::secrets_manager::{SecretPath, SecretsManager, StorageError};
 
@@ -58,6 +59,17 @@ where
     S: SecretsManager + Send + Sync,
 {
     ProviderTokenService::new(SecretsProviderStore::new(secrets))
+}
+
+/// Construct a ProviderTokenService using a pre-configured HTTP client (e.g., with proxies/timeouts).
+pub fn provider_token_service_with_client<S>(
+    secrets: S,
+    http_client: Client,
+) -> ProviderTokenService<SecretsProviderStore<S>>
+where
+    S: SecretsManager + Send + Sync,
+{
+    ProviderTokenService::with_client(SecretsProviderStore::new(secrets), http_client)
 }
 
 fn map_storage_error(err: StorageError) -> ProviderTokenError {

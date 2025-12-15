@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
+use greentic_config::ConfigResolver;
 use greentic_oauth_broker::admin::DesiredAppRequest;
-use reqwest::blocking::Client;
+use greentic_oauth_core::config::OAuthClientOptions;
 use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
@@ -8,6 +9,12 @@ use std::{fs, path::PathBuf};
 struct Cli {
     #[arg(long, default_value = "http://127.0.0.1:8080")]
     base_url: String,
+    /// Override config file path (defaults to ~/.config/greentic/config.toml and .greentic/config.toml)
+    #[arg(long)]
+    config: Option<PathBuf>,
+    /// Print resolved config and exit
+    #[arg(long)]
+    explain_config: bool,
     #[command(subcommand)]
     cmd: Command,
 }
@@ -74,7 +81,31 @@ enum TeamsCommand {
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let client = Client::new();
+    let legacy_warnings = apply_legacy_env_aliases();
+    let resolved = ConfigResolver::new()
+        .with_cli_overrides(greentic_config::CliOverrides {
+            config_path: cli.config.clone(),
+            ..Default::default()
+        })
+        .load()?;
+
+    if cli.explain_config {
+        println!("{}", resolved.explain());
+        return Ok(());
+    }
+
+    for warning in legacy_warnings.iter() {
+        eprintln!("{warning}");
+    }
+    for warning in resolved.warnings.iter() {
+        eprintln!("{warning}");
+    }
+
+    let client = OAuthClientOptions::new(
+        resolved.config.network.clone(),
+        resolved.config.telemetry.clone(),
+    )
+    .build_blocking_http_client()?;
     match cli.cmd {
         Command::Providers => {
             let res: serde_json::Value = client
@@ -194,6 +225,32 @@ fn main() -> anyhow::Result<()> {
         },
     }
     Ok(())
+}
+
+fn apply_legacy_env_aliases() -> Vec<String> {
+    let mut warnings = Vec::new();
+    let aliases = [
+        ("OAUTH_HTTP_PROXY", "GREENTIC_PROXY"),
+        ("OAUTH_NO_PROXY", "GREENTIC_NO_PROXY"),
+        ("OAUTH_TLS_INSECURE", "GREENTIC_TLS_INSECURE"),
+        ("OAUTH_CONNECT_TIMEOUT_MS", "GREENTIC_CONNECT_TIMEOUT_MS"),
+        ("OAUTH_REQUEST_TIMEOUT_MS", "GREENTIC_NETWORK_TIMEOUT_MS"),
+        ("ALLOW_INSECURE", "GREENTIC_TLS_INSECURE"),
+    ];
+
+    for (legacy, target) in aliases {
+        if std::env::var_os(target).is_none()
+            && let Ok(value) = std::env::var(legacy)
+        {
+            // SAFETY: scoped aliasing of known env vars
+            unsafe { std::env::set_var(target, value) };
+            warnings.push(format!(
+                "{legacy} is deprecated; set {target} or greentic-config files instead"
+            ));
+        }
+    }
+
+    warnings
 }
 
 fn print_plan_summary(value: &serde_json::Value) {

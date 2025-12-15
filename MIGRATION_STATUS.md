@@ -5,6 +5,7 @@
 - Added coverage for secrets-store loading in `SecurityConfig` and `ProviderRegistry`.
 - README documents the secrets-store layout and key paths for the broker.
 - Auth0 admin provisioning now prefers secrets-store for management credentials (`oauth/providers/auth0/{domain,client-id,client-secret}`) with env retained only as a dev fallback.
+- Broker binaries now resolve runtime knobs through `greentic-config`; outbound HTTP uses a shared client honoring GREENTIC_* proxy/TLS/timeout settings (legacy `OAUTH_*` and `SECRETS_DIR` envs are aliased with deprecation warnings).
 
 ## What broke or still needs attention
 - Admin provisioners: Auth0/Okta/Keycloak/Microsoft now prefer secrets-store (with env fallback for dev); Slack already uses provided extras only. Microsoft Graph paths: `oauth/providers/microsoft/{tenant-id,client-id,client-secret,teams-app-id}`.

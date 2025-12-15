@@ -5,6 +5,8 @@
 //! can enrich authorization and token requests for specific providers without
 //! reinventing serialization concerns.
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod config;
 pub mod constants;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod oidc;

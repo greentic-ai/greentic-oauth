@@ -37,6 +37,8 @@ aes-gcm = { workspace = true }
 base64 = "0.22"
 ed25519-dalek = { workspace = true }
 hmac = { workspace = true }
+greentic-config = { workspace = true }
+greentic-config-types = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -50,7 +52,7 @@ axum = { workspace = true }
 async-trait = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
-tokio = { workspace = true, features = ["signal", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio-rustls = { workspace = true }
@@ -72,12 +74,13 @@ subtle = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
 jsonschema = { workspace = true }
 hyper = { workspace = true }
 http-body-util = { workspace = true }
 insta = { workspace = true }
 wiremock = { workspace = true }
+serial_test = "3"
 
 [[bin]]
 name = "greentic-oauth-admin"
