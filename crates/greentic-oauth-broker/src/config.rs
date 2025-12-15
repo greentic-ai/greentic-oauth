@@ -2,6 +2,7 @@ use std::{env, sync::Arc};
 
 use url::Url;
 
+use crate::storage::secrets_manager::{SecretPath, SecretsManager, StorageError};
 use greentic_oauth_core::provider::{Provider, ProviderError};
 
 use crate::providers::{
@@ -10,10 +11,17 @@ use crate::providers::{
     microsoft::{MicrosoftProvider, TenantMode},
 };
 
+const SECRET_MICROSOFT_CLIENT_SECRET: &str = "oauth/providers/microsoft/client-secret";
+const SECRET_OIDC_CLIENT_SECRET: &str = "oauth/providers/generic-oidc/client-secret";
+
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error("missing required environment variable {0}")]
     MissingEnv(&'static str),
+    #[error("missing secret {key} at {path}")]
+    MissingSecret { key: &'static str, path: String },
+    #[error("secrets backend error: {0}")]
+    Secrets(String),
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
     #[error("provider error: {0}")]
@@ -30,16 +38,16 @@ impl ProviderRegistry {
         Self::default()
     }
 
-    pub fn from_env() -> Result<Self, ConfigError> {
+    pub fn from_store<S: SecretsManager>(secrets: &S) -> Result<Self, ConfigError> {
         let mut registry = Self::new();
 
-        if let Some(provider) = build_microsoft_from_env()? {
+        if let Some(provider) = build_microsoft_from_store(secrets)? {
             registry
                 .providers
                 .insert("microsoft".into(), Arc::new(provider));
         }
 
-        if let Some(provider) = build_generic_oidc_from_env()? {
+        if let Some(provider) = build_generic_oidc_from_store(secrets)? {
             registry
                 .providers
                 .insert("generic_oidc".into(), Arc::new(provider));
@@ -71,13 +79,18 @@ impl ProviderRegistry {
     }
 }
 
-fn build_microsoft_from_env() -> Result<Option<MicrosoftProvider>, ConfigError> {
+fn build_microsoft_from_store<S: SecretsManager>(
+    secrets: &S,
+) -> Result<Option<MicrosoftProvider>, ConfigError> {
     let client_id = match env::var("MSGRAPH_CLIENT_ID") {
         Ok(value) if !value.is_empty() => value,
         _ => return Ok(None),
     };
-    let client_secret = env::var("MSGRAPH_CLIENT_SECRET")
-        .map_err(|_| ConfigError::MissingEnv("MSGRAPH_CLIENT_SECRET"))?;
+    let client_secret = read_required_secret(
+        secrets,
+        SECRET_MICROSOFT_CLIENT_SECRET,
+        "MSGRAPH_CLIENT_SECRET",
+    )?;
     let tenant_mode_raw = env::var("MSGRAPH_TENANT_MODE").unwrap_or_else(|_| "multi".to_string());
     let tenant_mode = TenantMode::from_env(&tenant_mode_raw)?;
     let redirect_uri = env::var("MSGRAPH_REDIRECT_URI")
@@ -102,13 +115,15 @@ fn build_microsoft_from_env() -> Result<Option<MicrosoftProvider>, ConfigError> 
     Ok(Some(provider))
 }
 
-fn build_generic_oidc_from_env() -> Result<Option<GenericOidcProvider>, ConfigError> {
+fn build_generic_oidc_from_store<S: SecretsManager>(
+    secrets: &S,
+) -> Result<Option<GenericOidcProvider>, ConfigError> {
     let client_id = match env::var("OIDC_CLIENT_ID") {
         Ok(value) if !value.is_empty() => value,
         _ => return Ok(None),
     };
-    let client_secret = env::var("OIDC_CLIENT_SECRET")
-        .map_err(|_| ConfigError::MissingEnv("OIDC_CLIENT_SECRET"))?;
+    let client_secret =
+        read_required_secret(secrets, SECRET_OIDC_CLIENT_SECRET, "OIDC_CLIENT_SECRET")?;
     let auth_url =
         env::var("OIDC_AUTH_URL").map_err(|_| ConfigError::MissingEnv("OIDC_AUTH_URL"))?;
     let token_url =
@@ -136,6 +151,79 @@ fn parse_scopes(value: &str) -> Vec<String> {
         .filter(|segment| !segment.is_empty())
         .map(|segment| segment.to_string())
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{EnvSecretsManager, secrets_manager::SecretPath};
+    use std::env;
+    use tempfile::tempdir;
+
+    #[test]
+    fn loads_provider_secrets_from_store() {
+        let dir = tempdir().expect("tempdir");
+        let store = EnvSecretsManager::new(dir.path().to_path_buf()).expect("store");
+        store
+            .put_json(
+                &SecretPath::new(SECRET_MICROSOFT_CLIENT_SECRET).unwrap(),
+                &"micro-secret".to_string(),
+            )
+            .unwrap();
+
+        unsafe {
+            env::set_var("MSGRAPH_CLIENT_ID", "client-id");
+            env::set_var("MSGRAPH_REDIRECT_URI", "https://example.test/callback");
+        }
+
+        let registry = ProviderRegistry::from_store(&store).expect("provider registry");
+        assert!(registry.get("microsoft").is_some());
+
+        unsafe {
+            env::remove_var("MSGRAPH_CLIENT_ID");
+            env::remove_var("MSGRAPH_REDIRECT_URI");
+        }
+    }
+
+    #[test]
+    fn missing_provider_secret_surfaces_error() {
+        let dir = tempdir().expect("tempdir");
+        let store = EnvSecretsManager::new(dir.path().to_path_buf()).expect("store");
+
+        unsafe {
+            env::set_var("MSGRAPH_CLIENT_ID", "client-id");
+            env::set_var("MSGRAPH_REDIRECT_URI", "https://example.test/callback");
+        }
+
+        let err = ProviderRegistry::from_store(&store);
+        assert!(matches!(err, Err(ConfigError::MissingSecret { .. })));
+
+        unsafe {
+            env::remove_var("MSGRAPH_CLIENT_ID");
+            env::remove_var("MSGRAPH_REDIRECT_URI");
+        }
+    }
+}
+
+fn read_required_secret<S: SecretsManager>(
+    secrets: &S,
+    path: &str,
+    label: &'static str,
+) -> Result<String, ConfigError> {
+    let path =
+        SecretPath::new(path.to_string()).map_err(|err| ConfigError::Secrets(err.to_string()))?;
+    match secrets.get_json::<String>(&path) {
+        Ok(Some(value)) => Ok(value),
+        Ok(None) | Err(StorageError::NotFound(_)) => Err(ConfigError::MissingSecret {
+            key: label,
+            path: path.as_str().to_string(),
+        }),
+        Err(StorageError::InvalidPath(reason)) => Err(ConfigError::Secrets(reason)),
+        Err(StorageError::Io(err)) => Err(ConfigError::Secrets(err.to_string())),
+        Err(StorageError::Serialization(err)) => Err(ConfigError::Secrets(err.to_string())),
+        Err(StorageError::Encoding(err)) => Err(ConfigError::Secrets(err)),
+        Err(StorageError::Unsupported(reason)) => Err(ConfigError::Secrets(reason.to_string())),
+    }
 }
 
 #[derive(Clone)]

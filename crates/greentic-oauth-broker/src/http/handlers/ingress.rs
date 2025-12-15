@@ -11,12 +11,13 @@ use tracing::{error, warn};
 use crate::{
     admin::{
         providers::microsoft::MicrosoftProvisioner,
-        secrets::{messaging_tenant_path, read_string_secret_at},
+        secrets::{SecretStore, messaging_tenant_path, read_string_secret_at},
         traits::ProvisionContext,
     },
     events::PublishError,
     storage::secrets_manager::SecretsManager,
 };
+use std::sync::Arc;
 
 use super::super::SharedContext;
 
@@ -117,9 +118,9 @@ where
     }
 
     // Kick the reconciler to ensure the tenant stays in sync.
-    let provisioner = MicrosoftProvisioner::new();
-    let store = ctx.secrets.as_ref();
-    let provision_ctx = ProvisionContext::new(&tenant, store);
+    let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+    let provisioner = MicrosoftProvisioner::new(Some(store.clone()));
+    let provision_ctx = ProvisionContext::new(&tenant, store.as_ref());
     if let Err(err) = provisioner.reconcile_stored_tenant(&provision_ctx, None) {
         warn!(
             tenant = tenant.as_str(),

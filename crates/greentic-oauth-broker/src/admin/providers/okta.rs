@@ -26,41 +26,59 @@ use url::Url;
 const PROVIDER_KEY: &str = "okta";
 const DEFAULT_AUTHZ_SERVER: &str = "default";
 const OKTA_CONSENT_SCOPES: &[&str] = &["openid", "profile", "email", "offline_access"];
+const SECRET_OKTA_BASE_URL: &str = "oauth/providers/okta/base-url";
+const SECRET_OKTA_API_TOKEN: &str = "oauth/providers/okta/api-token";
+const SECRET_OKTA_TENANT_BASE_URL: &str = "oauth/providers/okta/tenant/base-url";
+const SECRET_OKTA_TENANT_API_TOKEN: &str = "oauth/providers/okta/tenant/api-token";
 
 pub struct OktaProvisioner {
     public_host: String,
-    directory: Arc<dyn OktaDirectory>,
+    directory_override: Option<Arc<dyn OktaDirectory>>,
 }
 
 impl Default for OktaProvisioner {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl OktaProvisioner {
-    pub fn new() -> Self {
+    pub fn new(secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let public_host =
             std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "localhost:8080".to_string());
-        let directory: Arc<dyn OktaDirectory> = match LiveOktaDirectory::from_env() {
-            Ok(Some(client)) => Arc::new(client),
-            Ok(None) => Arc::new(MockOktaDirectory::default()),
-            Err(err) => {
-                warn!("OKTA_BASE_URL/OKTA_API_TOKEN misconfigured ({err}); using mock directory");
-                Arc::new(MockOktaDirectory::default())
-            }
-        };
-        Self {
+        let mut provisioner = Self {
             public_host,
-            directory,
+            directory_override: None,
+        };
+        if let Some(secrets) = secrets {
+            provisioner.directory_override = LiveOktaDirectory::from_store(secrets.as_ref())
+                .ok()
+                .flatten()
+                .map(|dir| Arc::new(dir) as Arc<dyn OktaDirectory>);
         }
+        provisioner
     }
 
     #[cfg(test)]
     fn with_directory(directory: Arc<dyn OktaDirectory>) -> Self {
         Self {
             public_host: "localhost:8080".into(),
-            directory,
+            directory_override: Some(directory),
+        }
+    }
+
+    fn directory(&self, secrets: &dyn SecretStore) -> Arc<dyn OktaDirectory> {
+        if let Some(override_dir) = &self.directory_override {
+            return override_dir.clone();
+        }
+
+        match LiveOktaDirectory::from_store(secrets) {
+            Ok(Some(client)) => Arc::new(client),
+            Ok(None) => Arc::new(MockOktaDirectory::default()),
+            Err(err) => {
+                warn!("OKTA_BASE_URL/OKTA_API_TOKEN unavailable ({err}); using mock directory");
+                Arc::new(MockOktaDirectory::default())
+            }
         }
     }
 
@@ -123,6 +141,7 @@ impl OktaProvisioner {
         ctx: ProvisionContext<'_>,
         desired: &DesiredApp,
     ) -> Result<ProvisionReport> {
+        let directory = self.directory(ctx.secrets());
         let label = if desired.display_name.trim().is_empty() {
             "Greentic Okta Global".to_string()
         } else {
@@ -135,7 +154,7 @@ impl OktaProvisioner {
         };
 
         let mut is_new = false;
-        let mut app = match self.directory.fetch_application(&label)? {
+        let mut app = match directory.fetch_application(&label)? {
             Some(app) => app,
             None => {
                 is_new = true;
@@ -166,7 +185,7 @@ impl OktaProvisioner {
         let saved_app = if ctx.is_dry_run() {
             app
         } else {
-            self.directory.save_application(app)?
+            directory.save_application(app)?
         };
 
         if is_new {
@@ -230,7 +249,7 @@ impl OktaProvisioner {
         sanitize_value("authz_server_id", authz_server_id)?;
 
         if client_id.is_none() || client_secret.is_none() {
-            if let Some(auto) = self.automate_tenant_application(tenant, desired)? {
+            if let Some(auto) = self.automate_tenant_application(&ctx, desired)? {
                 client_id.get_or_insert(auto.client_id);
                 client_secret.get_or_insert(auto.client_secret);
                 report.created.push("application".into());
@@ -279,20 +298,27 @@ impl OktaProvisioner {
 
     fn automate_tenant_application(
         &self,
-        tenant: &str,
+        ctx: &ProvisionContext<'_>,
         desired: &DesiredApp,
     ) -> Result<Option<AutomatedTenantApp>> {
-        let base = match env::var("OKTA_TENANT_BASE_URL") {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
+        let base = read_string_secret_at(ctx.secrets(), SECRET_OKTA_TENANT_BASE_URL)?;
+        let token = read_string_secret_at(ctx.secrets(), SECRET_OKTA_TENANT_API_TOKEN)?;
+        let api = if let (Some(base), Some(token)) = (base, token) {
+            Some(OktaApiClient::new(&base, &token)?)
+        } else {
+            match (
+                env::var("OKTA_TENANT_BASE_URL"),
+                env::var("OKTA_TENANT_API_TOKEN"),
+            ) {
+                (Ok(base), Ok(token)) => Some(OktaApiClient::new(&base, &token)?),
+                _ => None,
+            }
         };
-        let token = match env::var("OKTA_TENANT_API_TOKEN") {
-            Ok(value) => value,
-            Err(_) => return Ok(None),
+        let Some(api) = api else {
+            return Ok(None);
         };
-        let api = OktaApiClient::new(&base, &token)?;
         let label = if desired.display_name.trim().is_empty() {
-            format!("Greentic Okta Tenant {tenant}")
+            format!("Greentic Okta Tenant {}", ctx.tenant())
         } else {
             desired.display_name.clone()
         };
@@ -590,7 +616,18 @@ struct LiveOktaDirectory {
 }
 
 impl LiveOktaDirectory {
-    fn from_env() -> Result<Option<Self>> {
+    fn from_store(secrets: &dyn SecretStore) -> Result<Option<Self>> {
+        let base = read_string_secret_at(secrets, SECRET_OKTA_BASE_URL)?;
+        let token = read_string_secret_at(secrets, SECRET_OKTA_API_TOKEN)?;
+        if base.is_some() || token.is_some() {
+            let base =
+                base.ok_or_else(|| anyhow!("secret `{SECRET_OKTA_BASE_URL}` must be set"))?;
+            let token =
+                token.ok_or_else(|| anyhow!("secret `{SECRET_OKTA_API_TOKEN}` must be set"))?;
+            let api = OktaApiClient::new(&base, &token)?;
+            return Ok(Some(Self { api }));
+        }
+
         let base = match std::env::var("OKTA_BASE_URL") {
             Ok(value) => value,
             Err(_) => return Ok(None),

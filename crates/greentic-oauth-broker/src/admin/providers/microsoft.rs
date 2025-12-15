@@ -40,6 +40,10 @@ const SUBSCRIPTION_CHANGE_TYPE: &str = "created,updated";
 const SUBSCRIPTION_TTL_HOURS: i64 = 20;
 const SUBSCRIPTION_RENEWAL_THRESHOLD_HOURS: i64 = SUBSCRIPTION_TTL_HOURS / 2;
 const TEAMS_WORKER_INTERVAL_SECS: u64 = 300;
+const SECRET_MS_TENANT_ID: &str = "oauth/providers/microsoft/tenant-id";
+const SECRET_MS_CLIENT_ID: &str = "oauth/providers/microsoft/client-id";
+const SECRET_MS_CLIENT_SECRET: &str = "oauth/providers/microsoft/client-secret";
+const SECRET_MS_TEAMS_APP_ID: &str = "oauth/providers/microsoft/teams-app-id";
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum RscStatus {
@@ -133,23 +137,26 @@ pub struct MicrosoftProvisioner {
 
 impl Default for MicrosoftProvisioner {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl MicrosoftProvisioner {
-    fn is_worker_ready() -> bool {
-        LiveGraphClient::is_configured()
+    fn is_worker_ready(secrets: Option<&dyn SecretStore>) -> bool {
+        matches!(LiveGraphClient::from_sources(secrets), Ok(Some(_)))
     }
 
-    pub fn new() -> Self {
+    pub fn new(secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let public_host =
             std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "localhost:8080".to_string());
-        let client: Arc<dyn GraphClient> = if LiveGraphClient::is_configured() {
-            Arc::new(LiveGraphClient::new())
-        } else {
-            Arc::new(MockGraphClient)
-        };
+        let client: Arc<dyn GraphClient> =
+            LiveGraphClient::from_sources(secrets.as_ref().map(|s| s.as_ref() as &dyn SecretStore))
+                .unwrap_or_else(|err| {
+                    warn!("ms graph credentials unavailable ({err}); using mock client");
+                    None
+                })
+                .map(|client| Arc::new(client) as Arc<dyn GraphClient>)
+                .unwrap_or_else(|| Arc::new(MockGraphClient));
         Self {
             client,
             public_host,
@@ -1641,17 +1648,8 @@ struct LiveGraphClient {
 }
 
 impl LiveGraphClient {
-    fn new() -> Self {
-        let api = GraphApiClient::from_env().expect("graph client configured");
-        Self { api }
-    }
-
-    fn is_configured() -> bool {
-        std::env::var("MS_TENANT_ID").is_ok()
-            && std::env::var("MS_CLIENT_ID").is_ok()
-            && (std::env::var("MS_CLIENT_SECRET").is_ok()
-                || (std::env::var("MS_CLIENT_CERT_PFX").is_ok()
-                    && std::env::var("MS_CLIENT_CERT_PASSWORD").is_ok()))
+    fn from_sources(secrets: Option<&dyn SecretStore>) -> Result<Option<Self>> {
+        GraphApiClient::from_sources(secrets).map(|opt| opt.map(|api| Self { api }))
     }
 }
 
@@ -1729,30 +1727,75 @@ struct AccessToken {
 }
 
 impl GraphApiClient {
-    fn from_env() -> Result<Self> {
+    fn from_sources(secrets: Option<&dyn SecretStore>) -> Result<Option<Self>> {
+        if let Some(store) = secrets {
+            let tenant_id = read_string_secret_at(store, SECRET_MS_TENANT_ID)?;
+            let client_id = read_string_secret_at(store, SECRET_MS_CLIENT_ID)?;
+            let client_secret = read_string_secret_at(store, SECRET_MS_CLIENT_SECRET)?;
+            let teams_app_id = read_string_secret_at(store, SECRET_MS_TEAMS_APP_ID)?;
+            let any = tenant_id.is_some()
+                || client_id.is_some()
+                || client_secret.is_some()
+                || teams_app_id.is_some();
+            if any {
+                let tenant_id = tenant_id
+                    .ok_or_else(|| anyhow!("secret `{SECRET_MS_TENANT_ID}` must be set"))?;
+                let client_id = client_id
+                    .ok_or_else(|| anyhow!("secret `{SECRET_MS_CLIENT_ID}` must be set"))?;
+                let client_secret = client_secret
+                    .ok_or_else(|| anyhow!("secret `{SECRET_MS_CLIENT_SECRET}` must be set"))?;
+                let teams_app_id = teams_app_id
+                    .ok_or_else(|| anyhow!("secret `{SECRET_MS_TEAMS_APP_ID}` must be set"))?;
+                let credential = GraphCredential::ClientSecret(client_secret);
+                let http = HttpClient::builder()
+                    .timeout(Duration::from_secs(20))
+                    .build()
+                    .context("failed to build Graph HTTP client")?;
+                return Ok(Some(Self {
+                    http,
+                    tenant_id,
+                    client_id,
+                    credential,
+                    token: Mutex::new(None),
+                    teams_app_id,
+                }));
+            }
+        }
+
         let tenant_id = std::env::var("MS_TENANT_ID")
-            .context("MS_TENANT_ID must be set for Microsoft provisioning")?;
+            .context("MS_TENANT_ID must be set for Microsoft provisioning")
+            .ok();
         let client_id = std::env::var("MS_CLIENT_ID")
-            .context("MS_CLIENT_ID must be set for Microsoft provisioning")?;
-        let credential = if let Ok(secret) = std::env::var("MS_CLIENT_SECRET") {
-            GraphCredential::ClientSecret(secret)
-        } else {
-            bail!("MS_CLIENT_SECRET not set; certificate auth not yet supported");
-        };
-        let teams_app_id = std::env::var("MS_TEAMS_APP_ID")
-            .context("MS_TEAMS_APP_ID must be set for Teams provisioning")?;
-        let http = HttpClient::builder()
-            .timeout(Duration::from_secs(20))
-            .build()
-            .context("failed to build Graph HTTP client")?;
-        Ok(Self {
-            http,
-            tenant_id,
-            client_id,
-            credential,
-            token: Mutex::new(None),
-            teams_app_id,
-        })
+            .context("MS_CLIENT_ID must be set for Microsoft provisioning")
+            .ok();
+        let client_secret = std::env::var("MS_CLIENT_SECRET").ok();
+        let teams_app_id = std::env::var("MS_TEAMS_APP_ID").ok();
+
+        match (tenant_id, client_id, client_secret, teams_app_id) {
+            (Some(tenant_id), Some(client_id), Some(secret), Some(teams_app_id)) => {
+                let credential = GraphCredential::ClientSecret(secret);
+                let http = HttpClient::builder()
+                    .timeout(Duration::from_secs(20))
+                    .build()
+                    .context("failed to build Graph HTTP client")?;
+                Ok(Some(Self {
+                    http,
+                    tenant_id,
+                    client_id,
+                    credential,
+                    token: Mutex::new(None),
+                    teams_app_id,
+                }))
+            }
+            (t, c, s, a) => {
+                if t.is_some() || c.is_some() || s.is_some() || a.is_some() {
+                    bail!(
+                        "MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET, and MS_TEAMS_APP_ID must all be set for live provisioning"
+                    );
+                }
+                Ok(None)
+            }
+        }
     }
 
     fn fetch_application(&self) -> Result<Option<GraphApplication>> {
@@ -2337,7 +2380,8 @@ pub fn spawn_teams_worker<S>(context: SharedContext<S>) -> Option<tokio::task::J
 where
     S: SecretsManager + 'static,
 {
-    if !MicrosoftProvisioner::is_worker_ready() {
+    let secrets: Arc<dyn SecretStore> = context.secrets.clone();
+    if !MicrosoftProvisioner::is_worker_ready(Some(secrets.as_ref())) {
         info!(
             target = "admin.ms",
             "Teams worker disabled; Graph credentials not configured"
@@ -2345,7 +2389,7 @@ where
         return None;
     }
 
-    let provisioner = Arc::new(MicrosoftProvisioner::new());
+    let provisioner = Arc::new(MicrosoftProvisioner::new(Some(secrets.clone())));
     let worker_context = context.clone();
     Some(tokio::spawn(async move {
         let mut ticker = interval(TokioDuration::from_secs(TEAMS_WORKER_INTERVAL_SECS));
@@ -2582,5 +2626,28 @@ mod tests {
             .ensure_application(ctx_dry, &desired)
             .expect("dry run");
         assert!(report_dry.created.is_empty());
+    }
+
+    #[test]
+    fn secrets_store_configures_graph_client() {
+        let secrets = MemorySecrets::default();
+        for (path, value) in [
+            (SECRET_MS_TENANT_ID, "00000000-0000-0000-0000-000000000000"),
+            (SECRET_MS_CLIENT_ID, "client-id"),
+            (SECRET_MS_CLIENT_SECRET, "super-secret"),
+            (SECRET_MS_TEAMS_APP_ID, "teams-app"),
+        ] {
+            secrets
+                .put_json_value(
+                    &SecretPath::new(path.to_string()).unwrap(),
+                    &json!({ "value": value }),
+                )
+                .unwrap();
+        }
+
+        assert!(
+            MicrosoftProvisioner::is_worker_ready(Some(&secrets)),
+            "expected secrets-backed Graph client to be ready"
+        );
     }
 }

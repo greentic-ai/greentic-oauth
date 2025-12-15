@@ -24,10 +24,13 @@ use url::Url;
 
 const PROVIDER_KEY: &str = "auth0";
 const AUTH0_CONSENT_SCOPES: &[&str] = &["openid", "profile", "offline_access"];
+const SECRET_AUTH0_DOMAIN: &str = "oauth/providers/auth0/domain";
+const SECRET_AUTH0_CLIENT_ID: &str = "oauth/providers/auth0/client-id";
+const SECRET_AUTH0_CLIENT_SECRET: &str = "oauth/providers/auth0/client-secret";
 
 pub struct Auth0Provisioner {
     public_host: String,
-    directory: Arc<dyn Auth0Directory>,
+    directory_override: Option<Arc<dyn Auth0Directory>>,
     consent_http: Arc<dyn Auth0ConsentHttpClient>,
 }
 
@@ -41,19 +44,9 @@ impl Auth0Provisioner {
     pub fn new() -> Self {
         let public_host =
             std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "localhost:8080".to_string());
-        let directory: Arc<dyn Auth0Directory> = match LiveAuth0Directory::from_env() {
-            Ok(Some(client)) => Arc::new(client),
-            Ok(None) => Arc::new(MockAuth0Directory::default()),
-            Err(err) => {
-                warn!(
-                    "AUTH0_DOMAIN/AUTH0_MGMT_CLIENT_* misconfigured ({err}); using mock directory"
-                );
-                Arc::new(MockAuth0Directory::default())
-            }
-        };
         Self {
             public_host,
-            directory,
+            directory_override: None,
             consent_http: Arc::new(ReqwestAuth0ConsentHttpClient),
         }
     }
@@ -62,7 +55,7 @@ impl Auth0Provisioner {
     fn with_directory(directory: Arc<dyn Auth0Directory>) -> Self {
         Self {
             public_host: "localhost:8080".into(),
-            directory,
+            directory_override: Some(directory),
             consent_http: Arc::new(ReqwestAuth0ConsentHttpClient),
         }
     }
@@ -74,8 +67,23 @@ impl Auth0Provisioner {
     ) -> Self {
         Self {
             public_host: "localhost:8080".into(),
-            directory,
+            directory_override: Some(directory),
             consent_http,
+        }
+    }
+
+    fn directory(&self, secrets: &dyn SecretStore) -> Arc<dyn Auth0Directory> {
+        if let Some(override_dir) = &self.directory_override {
+            return override_dir.clone();
+        }
+
+        match LiveAuth0Directory::from_store(secrets) {
+            Ok(Some(dir)) => Arc::new(dir),
+            Ok(None) => Arc::new(MockAuth0Directory::default()),
+            Err(err) => {
+                warn!("Auth0 management credentials unavailable ({err}); using mock directory");
+                Arc::new(MockAuth0Directory::default())
+            }
         }
     }
 
@@ -133,6 +141,7 @@ impl Auth0Provisioner {
         &self,
         ctx: ProvisionContext<'_>,
         desired: &DesiredApp,
+        directory: &dyn Auth0Directory,
     ) -> Result<ProvisionReport> {
         let label = if desired.display_name.trim().is_empty() {
             "Greentic Auth0 Global".to_string()
@@ -147,7 +156,7 @@ impl Auth0Provisioner {
         };
 
         let mut created_app = false;
-        let mut app = match self.directory.fetch_application(&label)? {
+        let mut app = match directory.fetch_application(&label)? {
             Some(app) => app,
             None => {
                 created_app = true;
@@ -178,7 +187,7 @@ impl Auth0Provisioner {
         let saved_app = if ctx.is_dry_run() {
             app
         } else {
-            self.directory.save_application(app)?
+            directory.save_application(app)?
         };
 
         if created_app {
@@ -406,8 +415,9 @@ impl AdminProvisioner for Auth0Provisioner {
         ctx: ProvisionContext<'_>,
         desired: &DesiredApp,
     ) -> Result<ProvisionReport> {
+        let directory = self.directory(ctx.secrets());
         if ctx.tenant().eq_ignore_ascii_case("global") {
-            self.ensure_global_application(ctx, desired)
+            self.ensure_global_application(ctx, desired, directory.as_ref())
         } else {
             let extras = desired
                 .extra_params
@@ -553,7 +563,23 @@ struct LiveAuth0Directory {
 }
 
 impl LiveAuth0Directory {
-    fn from_env() -> Result<Option<Self>> {
+    fn from_store(secrets: &dyn SecretStore) -> Result<Option<Self>> {
+        let domain = read_string_secret_at(secrets, SECRET_AUTH0_DOMAIN)?;
+        let client_id = read_string_secret_at(secrets, SECRET_AUTH0_CLIENT_ID)?;
+        let client_secret = read_string_secret_at(secrets, SECRET_AUTH0_CLIENT_SECRET)?;
+        let any_present = domain.is_some() || client_id.is_some() || client_secret.is_some();
+
+        if any_present {
+            let domain =
+                domain.ok_or_else(|| anyhow!("secret `{SECRET_AUTH0_DOMAIN}` must be set"))?;
+            let client_id = client_id
+                .ok_or_else(|| anyhow!("secret `{SECRET_AUTH0_CLIENT_ID}` must be set"))?;
+            let client_secret = client_secret
+                .ok_or_else(|| anyhow!("secret `{SECRET_AUTH0_CLIENT_SECRET}` must be set"))?;
+            let api = Auth0ApiClient::new(&domain, &client_id, &client_secret)?;
+            return Ok(Some(Self { api }));
+        }
+
         let domain_present = std::env::var("AUTH0_DOMAIN").is_ok();
         let client_id_present = std::env::var("AUTH0_MGMT_CLIENT_ID").is_ok();
         let client_secret_present = std::env::var("AUTH0_MGMT_CLIENT_SECRET").is_ok();

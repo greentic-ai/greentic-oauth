@@ -15,6 +15,7 @@ pub mod slack;
 
 use super::{
     models::ProvisionReport,
+    secrets::SecretStore,
     traits::{AdminProvisioner, ProvisionContext},
 };
 use std::sync::Arc;
@@ -53,16 +54,20 @@ impl AdminProvisioner for NotImplementedProvisioner {
     }
 }
 
-pub fn collect_enabled_provisioners() -> Vec<Arc<dyn AdminProvisioner>> {
+pub fn collect_enabled_provisioners(
+    secrets: Option<Arc<dyn SecretStore>>,
+) -> Vec<Arc<dyn AdminProvisioner>> {
     let mut list: Vec<Arc<dyn AdminProvisioner>> = Vec::new();
 
     #[cfg(feature = "admin-ms")]
     {
-        list.push(Arc::new(microsoft::MicrosoftProvisioner::new()));
+        list.push(Arc::new(microsoft::MicrosoftProvisioner::new(
+            secrets.clone(),
+        )));
     }
     #[cfg(feature = "admin-okta")]
     {
-        list.push(Arc::new(okta::OktaProvisioner::new()));
+        list.push(Arc::new(okta::OktaProvisioner::new(secrets.clone())));
     }
     #[cfg(feature = "admin-auth0")]
     {
@@ -70,7 +75,9 @@ pub fn collect_enabled_provisioners() -> Vec<Arc<dyn AdminProvisioner>> {
     }
     #[cfg(feature = "admin-keycloak")]
     {
-        list.push(Arc::new(keycloak::KeycloakProvisioner::new()));
+        list.push(Arc::new(keycloak::KeycloakProvisioner::new(
+            secrets.clone(),
+        )));
     }
     #[cfg(feature = "admin-google")]
     {

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -91,9 +92,9 @@ where
     S: SecretsManager + 'static,
 {
     let (request, _) = normalize_payload(payload)?;
-    let provisioner = MicrosoftProvisioner::new();
-    let store = ctx.secrets.as_ref() as &dyn SecretStore;
-    let provision_ctx = ProvisionContext::dry_run(&request.tenant, store);
+    let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+    let provisioner = MicrosoftProvisioner::new(Some(store.clone()));
+    let provision_ctx = ProvisionContext::dry_run(&request.tenant, store.as_ref());
     let report = provisioner
         .plan_tenant(&provision_ctx, &request.desired)
         .map_err(|err| AppError::internal(err.to_string()))?;
@@ -109,13 +110,13 @@ where
 {
     let (request, spec) = normalize_payload(payload)?;
     if let Some(spec) = spec {
-        let store = ctx.secrets.as_ref() as &dyn SecretStore;
-        store_spec(store, &request.tenant, &spec)?;
+        let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+        store_spec(store.as_ref(), &request.tenant, &spec)?;
     }
 
-    let provisioner = MicrosoftProvisioner::new();
-    let store = ctx.secrets.as_ref() as &dyn SecretStore;
-    let provision_ctx = ProvisionContext::new(&request.tenant, store);
+    let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+    let provisioner = MicrosoftProvisioner::new(Some(store.clone()));
+    let provision_ctx = ProvisionContext::new(&request.tenant, store.as_ref());
     let report = provisioner
         .ensure_application(provision_ctx, &request.desired)
         .map_err(|err| AppError::internal(err.to_string()))?;
@@ -129,9 +130,9 @@ async fn install_team<S>(
 where
     S: SecretsManager + 'static,
 {
-    let provisioner = MicrosoftProvisioner::new();
-    let store = ctx.secrets.as_ref() as &dyn SecretStore;
-    let provision_ctx = ProvisionContext::new(&body.tenant, store);
+    let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+    let provisioner = MicrosoftProvisioner::new(Some(store.clone()));
+    let provision_ctx = ProvisionContext::new(&body.tenant, store.as_ref());
     let report = provisioner
         .ensure_single_team(&provision_ctx, &body.team_id)
         .map_err(|err| AppError::internal(err.to_string()))?;
@@ -146,13 +147,13 @@ async fn remove_team<S>(
 where
     S: SecretsManager + 'static,
 {
-    let provisioner = MicrosoftProvisioner::new();
-    let store = ctx.secrets.as_ref() as &dyn SecretStore;
-    let provision_ctx = ProvisionContext::new(&tenant, store);
+    let store: Arc<dyn SecretStore> = ctx.secrets.clone();
+    let provisioner = MicrosoftProvisioner::new(Some(store.clone()));
+    let provision_ctx = ProvisionContext::new(&tenant, store.as_ref());
     let report = provisioner
         .remove_team(&provision_ctx, &team_id)
         .map_err(|err| AppError::internal(err.to_string()))?;
-    prune_team_from_spec(store, &tenant, &team_id)?;
+    prune_team_from_spec(store.as_ref(), &tenant, &team_id)?;
     Ok(Json(report))
 }
 

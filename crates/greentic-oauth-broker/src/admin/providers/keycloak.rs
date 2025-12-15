@@ -23,46 +23,47 @@ use ulid::Ulid;
 use url::Url;
 
 const PROVIDER_KEY: &str = "keycloak";
+const SECRET_KEYCLOAK_BASE_URL: &str = "oauth/providers/keycloak/base-url";
+const SECRET_KEYCLOAK_REALM: &str = "oauth/providers/keycloak/realm";
+const SECRET_KEYCLOAK_CLIENT_ID: &str = "oauth/providers/keycloak/client-id";
+const SECRET_KEYCLOAK_CLIENT_SECRET: &str = "oauth/providers/keycloak/client-secret";
 const KEYCLOAK_CONSENT_SCOPES: &[&str] = &["openid", "profile", "offline_access"];
 
 pub struct KeycloakProvisioner {
     public_host: String,
-    directory: Arc<dyn KeycloakDirectory>,
+    directory_override: Option<Arc<dyn KeycloakDirectory>>,
     consent_http: Arc<dyn KeycloakConsentHttpClient>,
 }
 
 impl Default for KeycloakProvisioner {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 
 impl KeycloakProvisioner {
-    pub fn new() -> Self {
+    pub fn new(secrets: Option<Arc<dyn SecretStore>>) -> Self {
         let public_host =
             std::env::var("PUBLIC_HOST").unwrap_or_else(|_| "localhost:8080".to_string());
-        let directory: Arc<dyn KeycloakDirectory> = match LiveKeycloakDirectory::from_env() {
-            Ok(Some(dir)) => Arc::new(dir),
-            Ok(None) => Arc::new(MockKeycloakDirectory::default()),
-            Err(err) => {
-                warn!(
-                    "KC_BASE_URL/KC_REALM/KC_CLIENT_* misconfigured ({err}); using mock directory"
-                );
-                Arc::new(MockKeycloakDirectory::default())
-            }
-        };
-        Self {
+        let mut provisioner = Self {
             public_host,
-            directory,
+            directory_override: None,
             consent_http: Arc::new(ReqwestKeycloakConsentHttpClient),
+        };
+        if let Some(secrets) = secrets {
+            provisioner.directory_override = LiveKeycloakDirectory::from_store(secrets.as_ref())
+                .ok()
+                .flatten()
+                .map(|dir| Arc::new(dir) as Arc<dyn KeycloakDirectory>);
         }
+        provisioner
     }
 
     #[cfg(test)]
     fn with_directory(directory: Arc<dyn KeycloakDirectory>) -> Self {
         Self {
             public_host: "localhost:8080".into(),
-            directory,
+            directory_override: Some(directory),
             consent_http: Arc::new(ReqwestKeycloakConsentHttpClient),
         }
     }
@@ -74,8 +75,23 @@ impl KeycloakProvisioner {
     ) -> Self {
         Self {
             public_host: "localhost:8080".into(),
-            directory,
+            directory_override: Some(directory),
             consent_http,
+        }
+    }
+
+    fn directory(&self, secrets: &dyn SecretStore) -> Arc<dyn KeycloakDirectory> {
+        if let Some(override_dir) = &self.directory_override {
+            return override_dir.clone();
+        }
+
+        match LiveKeycloakDirectory::from_store(secrets) {
+            Ok(Some(dir)) => Arc::new(dir),
+            Ok(None) => Arc::new(MockKeycloakDirectory::default()),
+            Err(err) => {
+                warn!("Keycloak management credentials unavailable ({err}); using mock directory");
+                Arc::new(MockKeycloakDirectory::default())
+            }
         }
     }
 
@@ -136,6 +152,7 @@ impl KeycloakProvisioner {
         &self,
         ctx: ProvisionContext<'_>,
         desired: &DesiredApp,
+        directory: &dyn KeycloakDirectory,
     ) -> Result<ProvisionReport> {
         let client_name = if desired.display_name.trim().is_empty() {
             "Greentic Keycloak Global".to_string()
@@ -149,7 +166,7 @@ impl KeycloakProvisioner {
             ..ProvisionReport::default()
         };
 
-        let mut app = match self.directory.fetch_client(&client_name)? {
+        let mut app = match directory.fetch_client(&client_name)? {
             Some(app) => app,
             None => {
                 report.created.push("application".into());
@@ -183,7 +200,7 @@ impl KeycloakProvisioner {
         let saved_app = if ctx.is_dry_run() {
             app
         } else {
-            self.directory.save_client(app)?
+            directory.save_client(app)?
         };
 
         let client_id_path = messaging_global_path(PROVIDER_KEY, "client_id");
@@ -377,8 +394,9 @@ impl AdminProvisioner for KeycloakProvisioner {
         ctx: ProvisionContext<'_>,
         desired: &DesiredApp,
     ) -> Result<ProvisionReport> {
+        let directory = self.directory(ctx.secrets());
         if ctx.tenant().eq_ignore_ascii_case("global") {
-            self.ensure_global_application(ctx, desired)
+            self.ensure_global_application(ctx, desired, directory.as_ref())
         } else {
             let extras = desired
                 .extra_params
@@ -522,12 +540,31 @@ struct LiveKeycloakDirectory {
 }
 
 impl LiveKeycloakDirectory {
-    fn from_env() -> Result<Option<Self>> {
-        let base = std::env::var("KC_BASE_URL").ok();
-        let realm = std::env::var("KC_REALM").ok();
-        let client = std::env::var("KC_CLIENT_ID").ok();
-        let secret = std::env::var("KC_CLIENT_SECRET").ok();
-        match (base, realm, client, secret) {
+    fn from_store(secrets: &dyn SecretStore) -> Result<Option<Self>> {
+        let base = read_string_secret_at(secrets, SECRET_KEYCLOAK_BASE_URL)?;
+        let realm = read_string_secret_at(secrets, SECRET_KEYCLOAK_REALM)?;
+        let client = read_string_secret_at(secrets, SECRET_KEYCLOAK_CLIENT_ID)?;
+        let secret = read_string_secret_at(secrets, SECRET_KEYCLOAK_CLIENT_SECRET)?;
+
+        let any = base.is_some() || realm.is_some() || client.is_some() || secret.is_some();
+        if any {
+            let base =
+                base.ok_or_else(|| anyhow!("secret `{SECRET_KEYCLOAK_BASE_URL}` must be set"))?;
+            let realm =
+                realm.ok_or_else(|| anyhow!("secret `{SECRET_KEYCLOAK_REALM}` must be set"))?;
+            let client = client
+                .ok_or_else(|| anyhow!("secret `{SECRET_KEYCLOAK_CLIENT_ID}` must be set"))?;
+            let secret = secret
+                .ok_or_else(|| anyhow!("secret `{SECRET_KEYCLOAK_CLIENT_SECRET}` must be set"))?;
+            let api = KeycloakApiClient::new(&base, &realm, &client, &secret)?;
+            return Ok(Some(Self { api }));
+        }
+
+        let base_env = std::env::var("KC_BASE_URL").ok();
+        let realm_env = std::env::var("KC_REALM").ok();
+        let client_env = std::env::var("KC_CLIENT_ID").ok();
+        let secret_env = std::env::var("KC_CLIENT_SECRET").ok();
+        match (base_env, realm_env, client_env, secret_env) {
             (Some(base), Some(realm), Some(client), Some(secret)) => {
                 let api = KeycloakApiClient::new(&base, &realm, &client, &secret)?;
                 Ok(Some(Self { api }))

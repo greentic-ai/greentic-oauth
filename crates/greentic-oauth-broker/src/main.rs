@@ -35,11 +35,11 @@ async fn run() -> Result<()> {
     let enable_test_flag = std::env::args()
         .skip(1)
         .any(|arg| arg == "--enable-test-endpoints");
-    let providers = Arc::new(ProviderRegistry::from_env()?);
-    let security = Arc::new(SecurityConfig::from_env()?);
     let secrets_dir =
         PathBuf::from(std::env::var("SECRETS_DIR").unwrap_or_else(|_| "./secrets".into()));
     let secrets = Arc::new(EnvSecretsManager::new(secrets_dir)?);
+    let providers = Arc::new(ProviderRegistry::from_store(&*secrets)?);
+    let security = Arc::new(SecurityConfig::from_store(&*secrets)?);
     let index = Arc::new(StorageIndex::new());
     let redirect_guard = Arc::new(RedirectGuard::from_env()?);
     let config_root = Arc::new(PathBuf::from(
@@ -115,7 +115,11 @@ async fn run() -> Result<()> {
             .ok()
             .map(|value| matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]))
             .unwrap_or(false);
-    let admin_registry = Arc::new(AdminRegistry::new(collect_enabled_provisioners()));
+    let admin_secrets: Arc<dyn greentic_oauth_broker::admin::secrets::SecretStore> =
+        secrets.clone();
+    let admin_registry = Arc::new(AdminRegistry::new(collect_enabled_provisioners(Some(
+        admin_secrets,
+    ))));
     let admin_consent = Arc::new(AdminConsentStore::new(Duration::from_secs(600)));
     let context = http::AppContext {
         providers,

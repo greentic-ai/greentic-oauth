@@ -228,9 +228,24 @@ Key artifacts:
 
 1. **Client / UI** – requests a flow for a specific tenant/team and redirects the user to the provider consent screen.
 2. **OAuth Broker (`crates/greentic-oauth-broker`)** – published as `greentic-oauth-broker`; exposes HTTP + NATS APIs, orchestrates provider flows, signs token handles (JWS), encrypts secrets (JWE), and publishes audit/NATS events.
-3. **Secrets Manager** – default `EnvSecretsManager` persists encrypted payloads using keys like `oauth:env:{env}:tenant:{tenant}:team:{team}:owner:{kind}:{id}:provider:{provider}.json`.
+3. **Secrets Store** – broker bootstrap keys (JWS/JWE/CSRF) and provider client secrets are loaded from `greentic:secrets-store@1.0.0`. For dev/test the file-backed store under `SECRETS_DIR` (default `./secrets`) is used, with per-tenant payloads stored at paths such as `oauth/{provider}/{tenant}/client` and `oauth/{provider}/{tenant}/refresh-token`.
 4. **Provider integrations** – pluggable providers (Microsoft Graph, Generic OIDC today) registered via env-driven config.
 5. **Worker / SDKs** – `oauth-worker` (Cloudflare Worker example) and `greentic-oauth-sdk` (Rust SDK + WIT bindings) consume broker APIs for automation and WASM embedding.
+
+## Secrets Store Layout
+
+The broker no longer reads sensitive values from environment variables in production. Populate `greentic:secrets-store@1.0.0` with:
+
+- `oauth/security/jws-ed25519-base64` – base64-encoded 32/64 byte signing key.
+- `oauth/security/jwe-aes256-gcm-base64` – base64-encoded 32 byte encryption key.
+- `oauth/security/hmac-base64` or `oauth/security/hmac-raw` – CSRF/signing HMAC secret (optional; falls back to the JWE key).
+- `oauth/security/discovery-jwk` – optional discovery signing JWK (stringified JSON).
+- Provider client secrets: `oauth/providers/microsoft/client-secret`, `oauth/providers/generic-oidc/client-secret`.
+- Admin/mgmt credentials: `oauth/providers/microsoft/{tenant-id,client-id,client-secret,teams-app-id}`, `oauth/providers/auth0/{domain,client-id,client-secret}`, `oauth/providers/okta/{base-url,api-token}`, `oauth/providers/okta/tenant/{base-url,api-token}`, `oauth/providers/keycloak/{base-url,realm,client-id,client-secret}`.
+
+_Repo settings_: enable GitHub “Allow auto-merge” and keep required branch checks configured so Dependabot PRs can be auto-approved and merged after CI passes.
+
+Use `greentic-secrets init/apply` to provision these paths; for local dev/tests the file-backed store at `SECRETS_DIR` (default `./secrets`) is used. There is no production env-var fallback.
 
 ## HTTP API Contract
 
@@ -288,6 +303,8 @@ sequenceDiagram
 ## Live OAuth Conformance
 
 The `conformance_live` example exercises real providers without browser interaction to validate discovery, JWKS, client credentials, refresh grants, revocation, and a basic bearer API call. Interactive flows (authorization code + PKCE) remain the domain of `apps/oauth-testharness` and are intentionally excluded from CI.
+
+The examples below still accept environment variables for convenience; the broker binary reads client secrets and signing keys from the secrets-store paths listed above.
 
 To run against an OIDC provider locally:
 
@@ -455,8 +472,8 @@ Trigger the workflow manually via “Run workflow” if you need to republish; a
 
 1. **Register credentials** with the upstream provider and obtain client IDs/secrets.
 2. **Configure environment variables** on the broker host:
-   - Microsoft Graph: `MSGRAPH_CLIENT_ID`, `MSGRAPH_CLIENT_SECRET`, `MSGRAPH_TENANT_MODE` (`common`, `organizations`, `consumers`, or `single:<tenantId>`), `MSGRAPH_REDIRECT_URI`, optional `MSGRAPH_DEFAULT_SCOPES`, optional `MSGRAPH_RESOURCE`.
-   - Generic OIDC: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`, `OIDC_REDIRECT_URI`, optional `OIDC_DEFAULT_SCOPES`.
+   - Microsoft Graph: `MSGRAPH_CLIENT_ID`, secrets-store `oauth/providers/microsoft/client-secret`, `MSGRAPH_TENANT_MODE` (`common`, `organizations`, `consumers`, or `single:<tenantId>`), `MSGRAPH_REDIRECT_URI`, optional `MSGRAPH_DEFAULT_SCOPES`, optional `MSGRAPH_RESOURCE`.
+   - Generic OIDC: `OIDC_CLIENT_ID`, secrets-store `oauth/providers/generic-oidc/client-secret`, `OIDC_AUTH_URL`, `OIDC_TOKEN_URL`, `OIDC_REDIRECT_URI`, optional `OIDC_DEFAULT_SCOPES`.
    - Broker runtime: `OAUTH_BASE_URL` (public URL for `/authorize/{id}`), optional `OAUTH_SESSION_TTL_SECS`, and either `OAUTH_HMAC_SECRET_BASE64` or `OAUTH_HMAC_SECRET` for state signing.
 3. **Whitelist redirects** via `OAUTH_REDIRECT_WHITELIST=https://app.greentic.ai/`.
 4. **Expose secret storage** (`SECRETS_DIR`) and ensure volume durability & access controls.
