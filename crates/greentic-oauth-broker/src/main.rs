@@ -19,10 +19,11 @@ use greentic_oauth_broker::{
     storage::{StorageIndex, env::EnvSecretsManager},
 };
 use greentic_oauth_core::config::OAuthClientOptions;
+use greentic_telemetry::{TelemetryConfig, init_telemetry_auto};
 use tokio::signal;
 use url::Url;
 
-#[greentic_types::telemetry::main(service_name = "greentic-oauth")]
+#[tokio::main]
 async fn main() {
     if let Err(error) = bootstrap().await {
         tracing::error!("broker shut down with error: {error}");
@@ -31,6 +32,10 @@ async fn main() {
 }
 
 async fn bootstrap() -> Result<()> {
+    init_telemetry_auto(TelemetryConfig {
+        service_name: "greentic-oauth".to_string(),
+    })
+    .context("failed to initialize telemetry")?;
     tracing::info!(component = "broker", "oauth broker starting up");
     run().await
 }
