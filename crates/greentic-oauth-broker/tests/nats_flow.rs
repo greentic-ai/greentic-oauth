@@ -33,6 +33,7 @@ use greentic_oauth_core::{
     types::{OAuthFlowRequest, OAuthFlowResult, OwnerKind, TokenHandleClaims, TokenSet},
 };
 use greentic_types::{EnvId, TenantId};
+use rand::{TryRngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::tempdir;
@@ -127,8 +128,10 @@ impl Provider for FakeProvider {
 fn security_config() -> SecurityConfig {
     let jws =
         JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=").unwrap();
-    let jwe = JweVault::from_key_bytes(&[2u8; 32]).unwrap();
-    let csrf = CsrfKey::new(&[3u8; 32]).unwrap();
+    let jwe_key = random_bytes();
+    let csrf_key = random_bytes();
+    let jwe = JweVault::from_key_bytes(&jwe_key).unwrap();
+    let csrf = CsrfKey::new(&csrf_key).unwrap();
     SecurityConfig {
         jws,
         jwe,
@@ -174,6 +177,14 @@ fn build_context(
 
 fn config_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../configs")
+}
+
+fn random_bytes() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    OsRng
+        .try_fill_bytes(&mut key)
+        .expect("os entropy source unavailable");
+    key
 }
 
 #[derive(Deserialize)]

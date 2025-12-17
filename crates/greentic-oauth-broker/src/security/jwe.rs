@@ -120,9 +120,14 @@ impl JweVault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{TryRngCore, rngs::OsRng};
 
-    fn key() -> Vec<u8> {
-        vec![4u8; 32]
+    fn random_key() -> [u8; 32] {
+        let mut key = [0u8; 32];
+        OsRng
+            .try_fill_bytes(&mut key)
+            .expect("os entropy source unavailable");
+        key
     }
 
     fn token_set() -> TokenSet {
@@ -138,7 +143,8 @@ mod tests {
 
     #[test]
     fn roundtrip_encrypt_decrypt() {
-        let vault = JweVault::from_key_bytes(&key()).expect("vault");
+        let key = random_key();
+        let vault = JweVault::from_key_bytes(&key).expect("vault");
         let token = vault.encrypt(&token_set()).expect("encrypt");
         let parsed = vault.decrypt(&token).expect("decrypt");
         assert_eq!(token_set(), parsed);
@@ -146,7 +152,8 @@ mod tests {
 
     #[test]
     fn tampered_tag_rejected() {
-        let vault = JweVault::from_key_bytes(&key()).expect("vault");
+        let key = random_key();
+        let vault = JweVault::from_key_bytes(&key).expect("vault");
         let mut token = vault.encrypt(&token_set()).expect("encrypt");
         token.push('x');
         let err = vault.decrypt(&token).unwrap_err();

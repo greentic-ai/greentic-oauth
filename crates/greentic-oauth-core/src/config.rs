@@ -30,7 +30,7 @@ impl OAuthClientOptions {
 
     fn apply_network<B>(&self, mut builder: B) -> B
     where
-        B: ProxyConfigurable + TimeoutConfigurable + TlsConfigurable,
+        B: ProxyConfigurable + TimeoutConfigurable,
     {
         if let Some(proxy) = self.network.proxy_url.as_ref()
             && let Ok(proxy_cfg) = Proxy::all(proxy)
@@ -46,7 +46,9 @@ impl OAuthClientOptions {
         }
 
         if matches!(self.network.tls_mode, TlsMode::Disabled) {
-            builder = builder.with_insecure_tls();
+            tracing::warn!(
+                "tls_mode=disabled is no longer supported; enforcing TLS certificate validation"
+            );
         }
 
         builder
@@ -60,10 +62,6 @@ trait ProxyConfigurable: Sized {
 trait TimeoutConfigurable: Sized {
     fn with_connect_timeout(self, timeout: Duration) -> Self;
     fn with_timeout(self, timeout: Duration) -> Self;
-}
-
-trait TlsConfigurable: Sized {
-    fn with_insecure_tls(self) -> Self;
 }
 
 impl ProxyConfigurable for ClientBuilder {
@@ -95,17 +93,5 @@ impl TimeoutConfigurable for BlockingClientBuilder {
 
     fn with_timeout(self, timeout: Duration) -> Self {
         self.timeout(timeout)
-    }
-}
-
-impl TlsConfigurable for ClientBuilder {
-    fn with_insecure_tls(self) -> Self {
-        self.danger_accept_invalid_certs(true)
-    }
-}
-
-impl TlsConfigurable for BlockingClientBuilder {
-    fn with_insecure_tls(self) -> Self {
-        self.danger_accept_invalid_certs(true)
     }
 }

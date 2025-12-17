@@ -134,7 +134,10 @@ async fn run() -> Result<()> {
         Duration::from_secs(rate_limit_window_secs.max(1)),
     ));
 
-    let allow_insecure = matches!(resolved.config.network.tls_mode, TlsMode::Disabled);
+    if matches!(resolved.config.network.tls_mode, TlsMode::Disabled) {
+        tracing::warn!("tls_mode=disabled is no longer supported; enforcing HTTPS-only requests");
+    }
+    let allow_insecure = false;
 
     let allow_extra_params = std::env::var("BROKER_ALLOW_EXTRA_PARAMS")
         .ok()

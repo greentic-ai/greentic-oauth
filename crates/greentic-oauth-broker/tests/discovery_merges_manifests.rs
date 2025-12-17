@@ -26,6 +26,7 @@ use greentic_oauth_broker::{
     storage::{StorageIndex, env::EnvSecretsManager},
 };
 use http_body_util::BodyExt;
+use rand::{TryRngCore, rngs::OsRng};
 use serde_json::Value;
 use tempfile::tempdir;
 use url::Url;
@@ -36,6 +37,14 @@ fn config_root_path() -> PathBuf {
 
 fn providers_root() -> PathBuf {
     config_root_path().join("providers")
+}
+
+fn random_bytes() -> [u8; 32] {
+    let mut key = [0u8; 32];
+    OsRng
+        .try_fill_bytes(&mut key)
+        .expect("os entropy source unavailable");
+    key
 }
 
 fn discovery_signer() -> DiscoverySigner {
@@ -61,8 +70,10 @@ fn discovery_signer() -> DiscoverySigner {
 fn security_config() -> SecurityConfig {
     let jws = JwsService::from_base64_secret("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=")
         .expect("jws");
-    let jwe = JweVault::from_key_bytes(&[4u8; 32]).expect("jwe");
-    let csrf = CsrfKey::new(&[5u8; 32]).expect("csrf");
+    let jwe_key = random_bytes();
+    let csrf_key = random_bytes();
+    let jwe = JweVault::from_key_bytes(&jwe_key).expect("jwe");
+    let csrf = CsrfKey::new(&csrf_key).expect("csrf");
     SecurityConfig {
         jws,
         jwe,
