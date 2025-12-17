@@ -32,19 +32,19 @@
 use std::sync::Arc;
 
 use anyhow::{Error as AnyhowError, anyhow};
-use openidconnect::reqwest::async_http_client;
 use openidconnect::{
     AccessToken, AdditionalProviderMetadata, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    IssuerUrl, LogoutProviderMetadata, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
-    PkceCodeVerifier, ProviderMetadata, RedirectUrl, RefreshToken, RevocationUrl, Scope,
+    EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, LogoutProviderMetadata, Nonce,
+    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, ProviderMetadata, RedirectUrl,
+    RefreshToken, RevocationUrl, Scope,
     core::{
         CoreAuthDisplay, CoreAuthenticationFlow, CoreClaimName, CoreClaimType, CoreClient,
         CoreClientAuthMethod, CoreGrantType, CoreIdToken, CoreIdTokenClaims, CoreJsonWebKey,
-        CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
-        CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
-        CoreRevocableToken, CoreSubjectIdentifierType, CoreTokenResponse,
+        CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreResponseMode,
+        CoreResponseType, CoreRevocableToken, CoreSubjectIdentifierType, CoreTokenResponse,
     },
 };
+use reqwest::{Client as HttpClient, redirect::Policy as RedirectPolicy};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -70,13 +70,26 @@ type GreenticProviderMetadata = ProviderMetadata<
     CoreGrantType,
     CoreJweContentEncryptionAlgorithm,
     CoreJweKeyManagementAlgorithm,
-    CoreJwsSigningAlgorithm,
-    CoreJsonWebKeyType,
-    CoreJsonWebKeyUse,
     CoreJsonWebKey,
     CoreResponseMode,
     CoreResponseType,
     CoreSubjectIdentifierType,
+>;
+type GreenticCoreClient = CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>;
+type GreenticCoreClientWithRevocation = CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
 >;
 
 fn resolve_endpoint(issuer: &Url, candidate: &str) -> Result<Url, AnyhowError> {
@@ -112,6 +125,38 @@ fn is_loopback_host(host: Host<&str>) -> bool {
         Host::Ipv4(addr) => addr.is_loopback(),
         Host::Ipv6(addr) => addr.is_loopback(),
     }
+}
+
+fn default_http_client() -> Result<HttpClient, reqwest::Error> {
+    HttpClient::builder()
+        .redirect(RedirectPolicy::none())
+        .build()
+}
+
+fn revocation_url_from_metadata(metadata: &GreenticProviderMetadata) -> Option<RevocationUrl> {
+    let issuer = metadata.issuer().url().clone();
+    metadata
+        .additional_metadata()
+        .additional_metadata
+        .revocation_endpoint
+        .as_deref()
+        .and_then(|raw| {
+            match resolve_endpoint(&issuer, raw).and_then(|resolved| {
+                validate_secure_or_localhost(&resolved)?;
+                Ok(resolved)
+            }) {
+                Ok(url) => Some(RevocationUrl::from_url(url)),
+                Err(err) => {
+                    tracing::warn!(
+                        target: "oauth.oidc",
+                        raw,
+                        error = %err,
+                        "skipping revocation endpoint"
+                    );
+                    None
+                }
+            }
+        })
 }
 
 /// Errors returned by [`OidcClient`].
@@ -187,6 +232,7 @@ pub struct OidcClient {
     metadata: Arc<GreenticProviderMetadata>,
     client_id: Option<ClientId>,
     client_secret: Option<ClientSecret>,
+    http_client: HttpClient,
 }
 
 impl OidcClient {
@@ -194,15 +240,17 @@ impl OidcClient {
     #[instrument(skip_all, fields(issuer = %issuer))]
     pub async fn discover(issuer: &Url) -> Result<Self, OidcError> {
         let issuer_url = IssuerUrl::from_url(issuer.clone());
+        let http_client = default_http_client().map_err(OidcError::Http)?;
 
         let metadata: GreenticProviderMetadata =
-            GreenticProviderMetadata::discover_async(issuer_url.clone(), async_http_client)
+            GreenticProviderMetadata::discover_async(issuer_url.clone(), &http_client)
                 .await
                 .map_err(|err| OidcError::Other(err.to_string()))?;
         Ok(Self {
             metadata: Arc::new(metadata),
             client_id: None,
             client_secret: None,
+            http_client,
         })
     }
 
@@ -267,9 +315,9 @@ impl OidcClient {
             .set_redirect_uri(RedirectUrl::from_url(redirect.clone()));
 
         let response = client
-            .exchange_code(AuthorizationCode::new(code.to_string()))
+            .exchange_code(AuthorizationCode::new(code.to_string()))?
             .set_pkce_verifier(pkce.pkce_verifier())
-            .request_async(async_http_client)
+            .request_async(&self.http_client)
             .await
             .map_err(|err| OidcError::Other(err.to_string()))?;
 
@@ -297,8 +345,8 @@ impl OidcClient {
     pub async fn refresh(&self, refresh_token: &str) -> Result<TokenSet, OidcError> {
         let client = self.core_client()?;
         let response = client
-            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-            .request_async(async_http_client)
+            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))?
+            .request_async(&self.http_client)
             .await
             .map_err(|err| OidcError::Other(err.to_string()))?;
 
@@ -317,6 +365,14 @@ impl OidcClient {
             Some("refresh_token") => CoreRevocableToken::from(RefreshToken::new(token.to_string())),
             _ => CoreRevocableToken::from(AccessToken::new(token.to_string())),
         };
+        let Some(revocation_url) = revocation_url_from_metadata(&self.metadata) else {
+            tracing::info!(
+                target: "oauth.oidc",
+                "revocation endpoint unavailable; skipping revoke"
+            );
+            return Ok(());
+        };
+        let client: GreenticCoreClientWithRevocation = client.set_revocation_url(revocation_url);
         let mut request = match client.revoke_token(revocable) {
             Ok(builder) => builder,
             Err(err) => {
@@ -337,7 +393,7 @@ impl OidcClient {
             request = request.add_extra_param("token_type_hint", hint.to_string());
         }
         request
-            .request_async(async_http_client)
+            .request_async(&self.http_client)
             .await
             .map_err(|err| OidcError::Other(err.to_string()))?;
         Ok(())
@@ -367,44 +423,16 @@ impl OidcClient {
         Ok(url)
     }
 
-    fn core_client(&self) -> Result<CoreClient, OidcError> {
+    fn core_client(&self) -> Result<GreenticCoreClient, OidcError> {
         let client_id = self
             .client_id
             .clone()
             .ok_or(OidcError::MissingClientCredentials)?;
-        let issuer = self.metadata.issuer().url().clone();
-        let revocation_url_opt = self
-            .metadata
-            .additional_metadata()
-            .additional_metadata
-            .revocation_endpoint
-            .as_deref()
-            .and_then(|raw| {
-                match resolve_endpoint(&issuer, raw).and_then(|resolved| {
-                    validate_secure_or_localhost(&resolved)?;
-                    Ok(resolved)
-                }) {
-                    Ok(url) => Some(RevocationUrl::from_url(url)),
-                    Err(err) => {
-                        tracing::warn!(
-                            target: "oauth.oidc",
-                            raw,
-                            error = %err,
-                            "skipping revocation endpoint"
-                        );
-                        None
-                    }
-                }
-            });
-
-        let mut client = CoreClient::from_provider_metadata(
+        let client: GreenticCoreClient = CoreClient::from_provider_metadata(
             (*self.metadata).clone(),
             client_id,
             self.client_secret.clone(),
         );
-        if let Some(revocation_url) = revocation_url_opt {
-            client = client.set_revocation_uri(revocation_url);
-        }
         Ok(client)
     }
 
@@ -418,6 +446,7 @@ impl OidcClient {
             metadata: Arc::new(metadata),
             client_id: None,
             client_secret: None,
+            http_client: default_http_client().expect("http client"),
         }
     }
 }
