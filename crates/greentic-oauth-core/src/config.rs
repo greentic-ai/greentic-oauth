@@ -1,6 +1,6 @@
 use greentic_config_types::{NetworkConfig, TelemetryConfig, TlsMode};
 use reqwest::blocking::{Client as BlockingClient, ClientBuilder as BlockingClientBuilder};
-use reqwest::{Client, ClientBuilder, NoProxy, Proxy};
+use reqwest::{Client, ClientBuilder, Proxy};
 use std::time::Duration;
 
 /// Runtime options derived from GreenticConfig and injected into OAuth clients.
@@ -32,40 +32,25 @@ impl OAuthClientOptions {
     where
         B: ProxyConfigurable + TimeoutConfigurable + TlsConfigurable,
     {
-        if let Some(proxy) = self.network.proxy.as_ref()
+        if let Some(proxy) = self.network.proxy_url.as_ref()
             && let Ok(proxy_cfg) = Proxy::all(proxy)
         {
-            let proxy_cfg = if let Some(no_proxy) = self.network.no_proxy.as_ref() {
-                let cleaned = normalize_no_proxy(no_proxy);
-                proxy_cfg.no_proxy(NoProxy::from_string(&cleaned))
-            } else {
-                proxy_cfg
-            };
             builder = builder.with_proxy(proxy_cfg);
         }
 
         if let Some(connect_ms) = self.network.connect_timeout_ms {
             builder = builder.with_connect_timeout(Duration::from_millis(connect_ms));
         }
-        if let Some(request_ms) = self.network.request_timeout_ms {
-            builder = builder.with_timeout(Duration::from_millis(request_ms));
+        if let Some(read_ms) = self.network.read_timeout_ms {
+            builder = builder.with_timeout(Duration::from_millis(read_ms));
         }
 
-        if matches!(self.network.tls.mode, TlsMode::InsecureSkipVerify) {
+        if matches!(self.network.tls_mode, TlsMode::Disabled) {
             builder = builder.with_insecure_tls();
         }
 
         builder
     }
-}
-
-fn normalize_no_proxy(value: &str) -> String {
-    value
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join(",")
 }
 
 trait ProxyConfigurable: Sized {

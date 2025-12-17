@@ -1,9 +1,9 @@
-use std::{net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
+use std::{fs, net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use axum::Router;
 use clap::Parser;
-use greentic_config::{CliOverrides, ConfigResolver};
+use greentic_config::{ConfigLayer, ConfigResolver};
 use greentic_config_types::TlsMode;
 #[cfg(feature = "admin-ms")]
 use greentic_oauth_broker::admin::providers::microsoft;
@@ -44,14 +44,14 @@ async fn run() -> Result<()> {
     let cli = Cli::parse();
     let (legacy_warnings, legacy_secrets_dir) = apply_legacy_env_aliases();
 
-    let resolver = ConfigResolver::new().with_cli_overrides(CliOverrides {
-        config_path: cli.config.clone(),
-        ..Default::default()
-    });
+    let cli_overrides = load_cli_config_layer(&cli.config)?;
+    let resolver = ConfigResolver::new().with_cli_overrides(cli_overrides);
     let resolved = resolver.load()?;
 
     if cli.explain_config {
-        println!("{}", resolved.explain());
+        let report =
+            greentic_config::explain(&resolved.config, &resolved.provenance, &resolved.warnings);
+        println!("{}", report.text);
         return Ok(());
     }
 
@@ -134,10 +134,7 @@ async fn run() -> Result<()> {
         Duration::from_secs(rate_limit_window_secs.max(1)),
     ));
 
-    let allow_insecure = matches!(
-        resolved.config.network.tls.mode,
-        TlsMode::InsecureSkipVerify
-    );
+    let allow_insecure = matches!(resolved.config.network.tls_mode, TlsMode::Disabled);
 
     let allow_extra_params = std::env::var("BROKER_ALLOW_EXTRA_PARAMS")
         .ok()
@@ -251,28 +248,75 @@ struct Cli {
     enable_test_endpoints: bool,
 }
 
+fn load_cli_config_layer(path: &Option<PathBuf>) -> Result<ConfigLayer> {
+    let Some(path) = path else {
+        return Ok(ConfigLayer::default());
+    };
+
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read config file at {}", path.display()))?;
+    let parsed = match path.extension().and_then(|ext| ext.to_str()) {
+        Some("json") => serde_json::from_str(&contents)
+            .with_context(|| format!("failed to parse JSON config file at {}", path.display()))?,
+        _ => toml::from_str(&contents)
+            .with_context(|| format!("failed to parse TOML config file at {}", path.display()))?,
+    };
+
+    Ok(parsed)
+}
+
 fn apply_legacy_env_aliases() -> (Vec<String>, Option<PathBuf>) {
     let mut warnings = Vec::new();
     let mut legacy_secrets_dir = None;
 
-    let aliases = [
-        ("OAUTH_HTTP_PROXY", "GREENTIC_PROXY"),
-        ("OAUTH_NO_PROXY", "GREENTIC_NO_PROXY"),
-        ("OAUTH_TLS_INSECURE", "GREENTIC_TLS_INSECURE"),
-        ("OAUTH_CONNECT_TIMEOUT_MS", "GREENTIC_CONNECT_TIMEOUT_MS"),
-        ("OAUTH_REQUEST_TIMEOUT_MS", "GREENTIC_NETWORK_TIMEOUT_MS"),
-        ("ALLOW_INSECURE", "GREENTIC_TLS_INSECURE"),
-    ];
+    if std::env::var_os("GREENTIC_NETWORK_PROXY_URL").is_none()
+        && let Ok(value) = std::env::var("OAUTH_HTTP_PROXY")
+    {
+        set_env_var("GREENTIC_NETWORK_PROXY_URL", &value);
+        warnings.push(
+            "OAUTH_HTTP_PROXY is deprecated; set GREENTIC_NETWORK_PROXY_URL via greentic-config instead"
+                .into(),
+        );
+    }
 
-    for (legacy, target) in aliases {
-        if std::env::var_os(target).is_none()
-            && let Ok(value) = std::env::var(legacy)
-        {
-            set_env_var(target, &value);
-            warnings.push(format!(
-                "{legacy} is deprecated; use {target} via greentic-config instead"
-            ));
+    if std::env::var_os("OAUTH_NO_PROXY").is_some() {
+        warnings.push(
+            "OAUTH_NO_PROXY is deprecated and ignored; no_proxy is no longer supported".into(),
+        );
+    }
+
+    if std::env::var_os("GREENTIC_NETWORK_TLS_MODE").is_none() {
+        for legacy in ["OAUTH_TLS_INSECURE", "ALLOW_INSECURE"] {
+            if let Ok(value) = std::env::var(legacy) {
+                if matches_ignore_ascii_case(value.trim(), &["1", "true", "yes", "on"]) {
+                    set_env_var("GREENTIC_NETWORK_TLS_MODE", "disabled");
+                    warnings.push(format!(
+                        "{legacy} is deprecated; set GREENTIC_NETWORK_TLS_MODE=disabled via greentic-config instead"
+                    ));
+                }
+                break;
+            }
         }
+    }
+
+    if std::env::var_os("GREENTIC_NETWORK_CONNECT_TIMEOUT_MS").is_none()
+        && let Ok(value) = std::env::var("OAUTH_CONNECT_TIMEOUT_MS")
+    {
+        set_env_var("GREENTIC_NETWORK_CONNECT_TIMEOUT_MS", &value);
+        warnings.push(
+            "OAUTH_CONNECT_TIMEOUT_MS is deprecated; set GREENTIC_NETWORK_CONNECT_TIMEOUT_MS instead"
+                .into(),
+        );
+    }
+
+    if std::env::var_os("GREENTIC_NETWORK_READ_TIMEOUT_MS").is_none()
+        && let Ok(value) = std::env::var("OAUTH_REQUEST_TIMEOUT_MS")
+    {
+        set_env_var("GREENTIC_NETWORK_READ_TIMEOUT_MS", &value);
+        warnings.push(
+            "OAUTH_REQUEST_TIMEOUT_MS is deprecated; set GREENTIC_NETWORK_READ_TIMEOUT_MS instead"
+                .into(),
+        );
     }
 
     if std::env::var_os("SECRETS_DIR").is_some()

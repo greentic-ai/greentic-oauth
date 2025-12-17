@@ -1,5 +1,6 @@
+use anyhow::Context;
 use clap::{Parser, Subcommand};
-use greentic_config::ConfigResolver;
+use greentic_config::{ConfigLayer, ConfigResolver};
 use greentic_oauth_broker::admin::DesiredAppRequest;
 use greentic_oauth_core::config::OAuthClientOptions;
 use std::{fs, path::PathBuf};
@@ -79,18 +80,35 @@ enum TeamsCommand {
     },
 }
 
+fn load_cli_config_layer(path: &Option<PathBuf>) -> anyhow::Result<ConfigLayer> {
+    let Some(path) = path else {
+        return Ok(ConfigLayer::default());
+    };
+
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read config file at {}", path.display()))?;
+    let parsed = match path.extension().and_then(|ext| ext.to_str()) {
+        Some("json") => serde_json::from_str(&contents)
+            .with_context(|| format!("failed to parse JSON config file at {}", path.display()))?,
+        _ => toml::from_str(&contents)
+            .with_context(|| format!("failed to parse TOML config file at {}", path.display()))?,
+    };
+
+    Ok(parsed)
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let legacy_warnings = apply_legacy_env_aliases();
+    let cli_overrides = load_cli_config_layer(&cli.config)?;
     let resolved = ConfigResolver::new()
-        .with_cli_overrides(greentic_config::CliOverrides {
-            config_path: cli.config.clone(),
-            ..Default::default()
-        })
+        .with_cli_overrides(cli_overrides)
         .load()?;
 
     if cli.explain_config {
-        println!("{}", resolved.explain());
+        let report =
+            greentic_config::explain(&resolved.config, &resolved.provenance, &resolved.warnings);
+        println!("{}", report.text);
         return Ok(());
     }
 
@@ -229,28 +247,69 @@ fn main() -> anyhow::Result<()> {
 
 fn apply_legacy_env_aliases() -> Vec<String> {
     let mut warnings = Vec::new();
-    let aliases = [
-        ("OAUTH_HTTP_PROXY", "GREENTIC_PROXY"),
-        ("OAUTH_NO_PROXY", "GREENTIC_NO_PROXY"),
-        ("OAUTH_TLS_INSECURE", "GREENTIC_TLS_INSECURE"),
-        ("OAUTH_CONNECT_TIMEOUT_MS", "GREENTIC_CONNECT_TIMEOUT_MS"),
-        ("OAUTH_REQUEST_TIMEOUT_MS", "GREENTIC_NETWORK_TIMEOUT_MS"),
-        ("ALLOW_INSECURE", "GREENTIC_TLS_INSECURE"),
-    ];
 
-    for (legacy, target) in aliases {
-        if std::env::var_os(target).is_none()
-            && let Ok(value) = std::env::var(legacy)
-        {
-            // SAFETY: scoped aliasing of known env vars
-            unsafe { std::env::set_var(target, value) };
-            warnings.push(format!(
-                "{legacy} is deprecated; set {target} or greentic-config files instead"
-            ));
+    if std::env::var_os("GREENTIC_NETWORK_PROXY_URL").is_none()
+        && let Ok(value) = std::env::var("OAUTH_HTTP_PROXY")
+    {
+        set_env_var("GREENTIC_NETWORK_PROXY_URL", &value);
+        warnings.push(
+            "OAUTH_HTTP_PROXY is deprecated; set GREENTIC_NETWORK_PROXY_URL via greentic-config instead"
+                .into(),
+        );
+    }
+
+    if std::env::var_os("OAUTH_NO_PROXY").is_some() {
+        warnings.push(
+            "OAUTH_NO_PROXY is deprecated and ignored; no_proxy is no longer supported".into(),
+        );
+    }
+
+    if std::env::var_os("GREENTIC_NETWORK_TLS_MODE").is_none() {
+        for legacy in ["OAUTH_TLS_INSECURE", "ALLOW_INSECURE"] {
+            if let Ok(value) = std::env::var(legacy) {
+                if is_truthy_flag(&value) {
+                    set_env_var("GREENTIC_NETWORK_TLS_MODE", "disabled");
+                    warnings.push(format!(
+                        "{legacy} is deprecated; set GREENTIC_NETWORK_TLS_MODE=disabled via greentic-config instead"
+                    ));
+                }
+                break;
+            }
         }
     }
 
+    if std::env::var_os("GREENTIC_NETWORK_CONNECT_TIMEOUT_MS").is_none()
+        && let Ok(value) = std::env::var("OAUTH_CONNECT_TIMEOUT_MS")
+    {
+        set_env_var("GREENTIC_NETWORK_CONNECT_TIMEOUT_MS", &value);
+        warnings.push(
+            "OAUTH_CONNECT_TIMEOUT_MS is deprecated; set GREENTIC_NETWORK_CONNECT_TIMEOUT_MS instead"
+                .into(),
+        );
+    }
+
+    if std::env::var_os("GREENTIC_NETWORK_READ_TIMEOUT_MS").is_none()
+        && let Ok(value) = std::env::var("OAUTH_REQUEST_TIMEOUT_MS")
+    {
+        set_env_var("GREENTIC_NETWORK_READ_TIMEOUT_MS", &value);
+        warnings.push(
+            "OAUTH_REQUEST_TIMEOUT_MS is deprecated; set GREENTIC_NETWORK_READ_TIMEOUT_MS instead"
+                .into(),
+        );
+    }
+
     warnings
+}
+
+fn is_truthy_flag(value: &str) -> bool {
+    ["1", "true", "yes", "on"]
+        .iter()
+        .any(|candidate| value.eq_ignore_ascii_case(candidate))
+}
+
+fn set_env_var(name: &str, value: &str) {
+    // SAFETY: Rust 2024 marks set_var as unsafe; here we scope it to known config aliasing.
+    unsafe { std::env::set_var(name, value) };
 }
 
 fn print_plan_summary(value: &serde_json::Value) {

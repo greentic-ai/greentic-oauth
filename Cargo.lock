@@ -223,17 +223,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "atty"
-version = "0.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
-dependencies = [
- "hermit-abi 0.1.19",
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -241,9 +230,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.15.1"
+version = "1.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b5ce75405893cd713f9ab8e297d8e438f624dde7d706108285f7e17a25a180f"
+checksum = "6a88aab2464f1f25453baa7a07c84c5b7684e274054ba06817f382357f77a288"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -251,9 +240,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.34.0"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "179c3777a8b5e70e90ea426114ffc565b2c1a9f82f6c4a0c5a34aa6ef5e781b6"
+checksum = "b45afffdee1e7c9126814751f88dddc747f41d91da16c9551a0f1e8a11e788a1"
 dependencies = [
  "cc",
  "cmake",
@@ -399,9 +388,9 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "bumpalo"
-version = "3.19.0"
+version = "3.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
+checksum = "5dd9dc738b7a8311c7ade152424974d8115f2cdad61e8dab8dac9f2362298510"
 dependencies = [
  "allocator-api2",
 ]
@@ -972,24 +961,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "dirs"
-version = "5.0.1"
+name = "directories"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
+checksum = "16f5094c54661b38d03bd7e50df373292118db60b585c08a411c6d840017fe7d"
 dependencies = [
  "dirs-sys",
 ]
 
 [[package]]
 name = "dirs-sys"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
 dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1407,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-axum-example"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1426,31 +1415,35 @@ dependencies = [
 
 [[package]]
 name = "greentic-config"
-version = "0.4.6"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "512587f2489a206508a56f1613fc2bc679700ed1668ba0acf5d2b0e638494e89"
+checksum = "c237a5d19fbe2d5953f62375f2a96b6fae7f0c663dc658fff41bc8dceef57500"
 dependencies = [
  "anyhow",
- "dirs",
+ "camino",
+ "directories",
  "greentic-config-types",
  "greentic-types",
  "once_cell",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror 2.0.17",
  "toml",
+ "url",
 ]
 
 [[package]]
 name = "greentic-config-types"
-version = "0.4.6"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a4a8f988d82452ccfba2bd941237204b76e95664b84362c97ea072dfabb7008"
+checksum = "9160c73d4ff3495833cf698edc5d63400b4feca822606712a47dd888d9bf830c"
 dependencies = [
  "greentic-types",
  "serde",
  "serde_json",
  "toml",
+ "url",
 ]
 
 [[package]]
@@ -1500,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-broker"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -1536,6 +1529,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls 0.26.4",
+ "toml",
  "tower",
  "tower-http",
  "tracing",
@@ -1551,7 +1545,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-client"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "reqwest 0.12.26",
  "serde",
@@ -1562,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-core"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1591,7 +1585,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-host"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "async-trait",
  "greentic-interfaces-host",
@@ -1606,7 +1600,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-oauth-sdk"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -1631,12 +1625,11 @@ dependencies = [
 
 [[package]]
 name = "greentic-telemetry"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c467daab41db901f27deb70497fde3721d439241438ca56856daa5f422d4db48"
+checksum = "61a2069bca02b9162598486ddeef9cda37ee41754e14c777f00468f118f4b5cc"
 dependencies = [
  "anyhow",
- "atty",
  "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
@@ -1654,9 +1647,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "0.4.19"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1004837a82eb5c4b617aee138b8c4b5c5415e0cfeca128c9e26554f2951b59f6"
+checksum = "76eb72861b2f6873e39424f07caffa39df037cbdba6b7004d53567c6003fdcc7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1680,9 +1673,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types-macros"
-version = "0.4.19"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58d4fbe7fca8cbd3d94ac51af90d4ec2cd61d58fccb8b4e4454020fd991689c8"
+checksum = "71a1a215f9a62b0097a82f19cb07fde68ec0f0b87a6f06024c8e31ccd2395727"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1796,15 +1789,6 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
-name = "hermit-abi"
-version = "0.1.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "hermit-abi"
@@ -2344,9 +2328,9 @@ checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
 name = "libredox"
-version = "0.1.10"
+version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "416f7e718bdb06000964960ffa43b4335ad4012ae8b99060261aa4a8088d5ccb"
+checksum = "df15f6eac291ed1cf25865b1ee60399f57e7c227e7f51bdbd4c5270396a9ed50"
 dependencies = [
  "bitflags 2.10.0",
  "libc",
@@ -2598,13 +2582,13 @@ version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
- "hermit-abi 0.5.2",
+ "hermit-abi",
  "libc",
 ]
 
 [[package]]
 name = "oauth-testharness"
-version = "0.4.18"
+version = "0.4.19"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3192,13 +3176,13 @@ dependencies = [
 
 [[package]]
 name = "redox_users"
-version = "0.4.6"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba009ff324d1fc1b900bd1fdb31564febe58a8ccc8a6fdbb93b543d33b13ca43"
+checksum = "a4e608c6638b9c18977b00b475ac1f28d14e84b27d8d42f70e0bf1e3dec127ac"
 dependencies = [
  "getrandom 0.2.16",
  "libredox",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -3493,9 +3477,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.13.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "708c0f9d5f54ba0272468c1d306a52c495b31fa155e91bc25371e6df7996908c"
+checksum = "21e6f2ab2928ca4291b86736a8bd920a277a399bba1589409d72154ff87c1282"
 dependencies = [
  "web-time",
  "zeroize",
@@ -5131,22 +5115,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "winapi"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
-dependencies = [
- "winapi-i686-pc-windows-gnu",
- "winapi-x86_64-pc-windows-gnu",
-]
-
-[[package]]
-name = "winapi-i686-pc-windows-gnu"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
-
-[[package]]
 name = "winapi-util"
 version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5154,12 +5122,6 @@ checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
  "windows-sys 0.61.2",
 ]
-
-[[package]]
-name = "winapi-x86_64-pc-windows-gnu"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "winch-codegen"
