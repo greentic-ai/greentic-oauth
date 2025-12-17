@@ -37,7 +37,7 @@ chrono = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 openidconnect = { workspace = true }
-reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "rustls-tls", "blocking"] }
 greentic-config-types = { workspace = true }
 
 [dev-dependencies]
