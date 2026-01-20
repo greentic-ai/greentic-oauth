@@ -34,7 +34,7 @@ tracing-opentelemetry = "0.32"
 ulid = "1"
 aes-gcm = "0.10"
 anyhow = "1"
-async-nats = "0.45"
+async-nats = "0.46"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "http1", "tokio"] }
 base64 = "0.22"
